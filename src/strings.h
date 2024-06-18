@@ -10,6 +10,15 @@
 char* trim_comment(char* s);
 
 /**
+ * Right trims a string.
+ *
+ * @param s The string to be trimmed.
+ * @remarks
+ * Credit to chux: https://stackoverflow.com/questions/122616/how-do-i-trim-leading-trailing-whitespace-in-a-standard-way#122721
+ * */
+char* rtrim_string(char* s);
+
+/**
  * Trims a string.
  *
  * @param s The string to be trimmed.

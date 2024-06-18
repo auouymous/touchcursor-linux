@@ -25,6 +25,23 @@ char* trim_comment(char* s)
 }
 
 /**
+ * Right trims a string.
+ *
+ * @param s The string to be trimmed.
+ * @remarks
+ * Credit to chux: https://stackoverflow.com/questions/122616/how-do-i-trim-leading-trailing-whitespace-in-a-standard-way#122721
+ * */
+char* rtrim_string(char* s)
+{
+    char* p = s;
+    while (*p) p++;
+    p--;
+    while (p >= s && isspace((unsigned char)*p)) p--;
+    p[1] = '\0';
+    return s;
+}
+
+/**
  * Trims a string.
  *
  * @param s The string to be trimmed.

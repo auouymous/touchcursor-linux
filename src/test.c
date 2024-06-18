@@ -281,12 +281,13 @@ static void testSpecialTyping()
  */
 int main()
 {
-    test_device = registerInputDevice(0, "test", 1, registerLayer(0, "test Device"));
+    test_device = registerInputDevice(0, "test", 1, registerLayer(0, NULL, "test Device"));
+    test_device->inherit_remap = 1;
 
     int remap[MAX_KEYMAP];
     memset(remap, 0, sizeof(remap));
 
-    struct layer* test_layer = registerLayer(0, "test Bindings");
+    struct layer* test_layer = registerLayer(0, NULL, "test Bindings");
 
     uint16_t sequence[4];
 
@@ -302,7 +303,7 @@ int main()
     remap[KEY("mr2")] = KEY("m2");
     sequence[0] = KEY("layer_mr2"); setLayerKey(test_layer, KEY("mr2"), 1, sequence);
 
-    setLayerActionOverload(test_device->layer, KEY("overload"), test_layer, KEY("overload"));
+    setLayerActionOverload(test_device->layer, KEY("overload"), test_layer, 0, NULL, KEY("overload"));
 
     finalizeInputDevice(test_device, remap);
 

@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <ctype.h>
 #include <errno.h>
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,11 +22,51 @@ static int nr_layers = 0;
 struct input_device input_devices[MAX_DEVICES];
 int nr_input_devices;
 
+static regex_t re_layer_name;
+
+struct layer_path_reference
+{
+    int lineno;
+    struct layer* parent_layer;
+    char path[MAX_LAYER_NAME];
+    uint8_t* field;
+    struct layer_path_reference *next;
+};
+static struct layer_path_reference* layer_path_references = NULL;
+
+/**
+ * Add a layer path reference.
+ * */
+static void add_layer_path_reference(int lineno, struct layer* parent_layer, char* path, uint8_t* field)
+{
+    struct layer_path_reference* p = malloc(sizeof(struct layer_path_reference));
+    p->lineno = lineno;
+    p->parent_layer = parent_layer;
+    strcpy(p->path, path);
+    p->field = field;
+    p->next = layer_path_references;
+    layer_path_references = p;
+}
+
 /**
  * Find layer by path name.
  * */
-static struct layer* find_layer(int lineno, char* path)
+static struct layer* find_layer(int lineno, struct layer* parent_layer, char* path)
 {
+    char fullpath[2 * MAX_LAYER_NAME];
+    if (path[0] == '.')
+    {
+        if (strlen(parent_layer->name) + strlen(path) >= MAX_LAYER_NAME)
+        {
+            error("error[%d]: layer path is longer than %d: %s\n", lineno, MAX_LAYER_NAME - 1, path);
+            return NULL;
+        }
+
+        // Start in parent layer
+        snprintf(fullpath, MAX_LAYER_NAME, "%s%s", parent_layer->name, path);
+        path = fullpath;
+    }
+
     for (int i = 0; i < nr_layers; i++)
     {
         if (strcmp(layers[i]->name, path) == 0)
@@ -109,8 +150,35 @@ enum sections
     configuration_remap,
     configuration_hyper,
     configuration_bindings,
+    configuration_layer,
     configuration_invalid
 };
+
+/**
+ * Parse a user layer name.
+ * */
+static int parse_user_layer(char* line, int lineno, int line_length, struct layer** user_layer, enum sections *section)
+{
+    if (line[line_length - 1] != ']') return 0;
+
+    line[line_length - 1] = '\0'; // Remove ']'
+
+    // Skip '['
+    char* s = &line[1];
+
+    if (regexec(&re_layer_name, s, 0, NULL, 0) != 0)
+    {
+        error("error[%d]: invalid layer name: %s\n", lineno, s);
+        *user_layer = NULL;
+        *section = configuration_layer;
+    }
+    else
+    {
+        *user_layer = registerLayer(lineno, *user_layer, s);
+        *section = configuration_layer;
+    }
+    return 1;
+}
 
 /**
  * Parse a line in a remap section.
@@ -146,6 +214,28 @@ static void parse_remap(char* line, int lineno, int* remap)
 }
 
 /**
+ * Parse space separated tokens in a line.
+ * */
+static char* next_argument(char** tokens)
+{
+    return (*tokens ? strsep(tokens, " ") : "");
+}
+
+/**
+ * Check if argument has a key, and set value string.
+ * */
+static int get_key_value_argument(char* token, char* key, char** value)
+{
+    int key_length = strlen(key);
+    if (token[key_length] == '=' && strncmp(token, key, key_length) == 0)
+    {
+        *value = &token[key_length + 1];
+        return 1;
+    }
+    return 0;
+}
+
+/**
  * Parse a line in a binding section.
  * */
 static void parse_binding(char* line, int lineno, struct layer* layer)
@@ -163,6 +253,59 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
         error("error[%d]: left key code must be less than %d: %s\n", lineno, MAX_KEYMAP, token);
         return;
     }
+    if (layer->keymap[fromCode].kind != ACTION_TRANSPARENT)
+    {
+        warn("warning[%d]: duplicate bindings for key: %s\n", lineno, line);
+    }
+
+    if (tokens[0] == '(')
+    {
+        // Action
+        tokens++;
+        size_t length = strlen(tokens);
+        char* action = tokens;
+        if (tokens[length - 1] == ')')
+        {
+            tokens[length - 1] = '\0'; // Remove ')'
+            action = strsep(&tokens, " ");
+            if (strcmp(action, "overload") == 0)
+            {
+                // (overload to_layer [tap=to_code])
+                char* to_layer_path = next_argument(&tokens);
+                char* to_code_name = "";
+                while (tokens)
+                {
+                    char* arg = next_argument(&tokens);
+                    if (get_key_value_argument(arg, "tap", &to_code_name)) continue;
+                    error("error[%d]: invalid argument: %s\n", lineno, arg);
+                }
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                int to_code = fromCode;
+                if (to_code_name[0] != '\0')
+                {
+                    // Parse optional key code
+                    to_code = convertKeyStringToCode(to_code_name);
+                    if (to_code == 0)
+                    {
+                        error("error[%d]: invalid key: expected a single key: %s\n", lineno, to_code_name);
+                        return;
+                    }
+                }
+
+                setLayerActionOverload(layer, fromCode, NULL, lineno, to_layer_path, to_code);
+                return;
+            }
+        }
+
+        error("error[%d]: invalid action: %s\n", lineno, action);
+        return;
+    }
+
     uint16_t sequence[MAX_SEQUENCE];
     unsigned int index = 0;
     while ((token = strsep(&tokens, ",")) != NULL)
@@ -186,6 +329,66 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
         return;
     }
     setLayerKey(layer, fromCode, index, sequence);
+}
+
+/**
+ * Parse a command in a user layer.
+ * */
+static void parse_command(char* line, int lineno, struct layer* user_layer)
+{
+    // Skip '('
+    line++;
+
+    char* tokens = line;
+    size_t length = strlen(tokens);
+    char* command = tokens;
+    if (tokens[length - 1] == ')')
+    {
+        tokens[length - 1] = '\0';
+        command = strsep(&tokens, " ");
+        if (strcmp(command, "device") == 0)
+        {
+            // (device "name"[:number])
+            char* _name = tokens;
+            int number = get_device_number(_name);
+
+            if (user_layer->parent_layer)
+            {
+                error("error[%d]: device command is only valid in a top-level layer: %s:%i\n", lineno, _name, number);
+                return;
+            }
+            if (user_layer->device_index != 0xFF)
+            {
+                error("error[%d]: multiple device commands in same layer: %s:%i\n", lineno, _name, number);
+                return;
+            }
+            char name[256];
+            snprintf(name, 256, "Name=%s", _name);
+            struct input_device* device = registerInputDevice(lineno, name, number, user_layer);
+            if (device == NULL) return;
+            find_device_event_path(device);
+            return;
+        }
+        if (strcmp(command, "inherit-remap") == 0)
+        {
+            // (inherit-remap)
+            if (tokens)
+            {
+                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                return;
+            }
+
+            if (user_layer->device_index == 0xFF)
+            {
+                error("error[%d]: inherit-remap command is only valid in a device layer\n", lineno);
+                return;
+            }
+            input_devices[user_layer->device_index].inherit_remap = 1;
+            return;
+        }
+    }
+
+    error("error[%d]: invalid command: %s\n", lineno, command);
 }
 
 /**
@@ -227,15 +430,34 @@ int read_configuration()
     ssize_t result = -1;
     int lineno = 0;
     enum sections section = configuration_none;
+    regfree(&re_layer_name);
+    regcomp(&re_layer_name, "^[a-z0-9_-]+$", REG_EXTENDED|REG_NOSUB); // Uppercase names are reserved for sections
+    struct layer* user_layer = NULL;
+    int* user_remap = NULL;
+    int invalid_layer_indent = 0;
+    int base_user_layer_indent = 0;
     while ((result = getline(&buffer, &length, configuration_file)) != -1)
     {
         lineno++;
         char* line = trim_comment(buffer);
-        line = trim_string(line);
+        if (user_layer)
+        {
+            line = rtrim_string(line);
+        }
+        else
+        {
+            line = trim_string(line);
+        }
         // Comment or empty line
         if (is_comment_or_empty(line))
         {
             continue;
+        }
+        if (user_layer && !isspace(line[0]))
+        {
+            user_layer = NULL;
+            user_remap = NULL;
+            invalid_layer_indent = 0;
         }
         // Check for section
         if (line[0] == '[')
@@ -260,7 +482,7 @@ int read_configuration()
             {
                 if (hyper_layer == NULL)
                 {
-                    hyper_layer = registerLayer(0, "Bindings");
+                    hyper_layer = registerLayer(0, NULL, "Bindings");
                     if (hyper_layer == NULL)
                     {
                         section = configuration_invalid;
@@ -277,6 +499,9 @@ int read_configuration()
                 automatic_reload = 0;
                 continue;
             }
+
+            if (parse_user_layer(line, lineno, line_length, &user_layer, &section)) continue;
+
             error("error[%d]: invalid section: %s\n", lineno, line);
             section = configuration_invalid;
             continue;
@@ -290,11 +515,12 @@ int read_configuration()
                 int number = get_device_number(name);
                 char layer_name[11];
                 snprintf(layer_name, 11, "Device %d", nr_input_devices);
-                struct layer* layer = registerLayer(0, layer_name);
+                struct layer* layer = registerLayer(0, NULL, layer_name);
                 if (layer == NULL) continue;
                 struct input_device* device = registerInputDevice(lineno, name, number, layer);
                 if (device == NULL) continue;
                 find_device_event_path(device);
+                device->inherit_remap = 1;
                 break;
             }
             case configuration_remap:
@@ -318,6 +544,7 @@ int read_configuration()
                     error("error[%d]: hyper key set multiple times\n", lineno);
                     continue;
                 }
+
                 hyperKey = code;
                 break;
             }
@@ -325,6 +552,93 @@ int read_configuration()
             {
                 parse_binding(line, lineno, hyper_layer);
                 break;
+            }
+            case configuration_layer:
+            {
+                if (user_layer == NULL) continue; // Ignore all lines in an invalid layer
+
+                // Count line indent
+                char* s = line;
+                while (*s == ' ' || *s == '\t') s++;
+                int indent = s - line;
+                line = s;
+                // Count layer indent
+                int layer_indent = 1;
+                for (struct layer* layer = user_layer; layer->parent_layer != NULL; layer = layer->parent_layer) layer_indent++;
+                if (user_remap) layer_indent++;
+                // Compare indents
+                if (base_user_layer_indent > 0)
+                {
+                    int want_indent = base_user_layer_indent * layer_indent;
+                    while (indent < want_indent && (user_remap || user_layer->parent_layer))
+                    {
+                        // Return to parent layer from a nested layer
+                        if (user_remap)
+                        {
+                            user_remap = NULL;
+                        }
+                        else
+                        {
+                            user_layer = user_layer->parent_layer;
+                        }
+                        layer_indent -= base_user_layer_indent;
+                        want_indent = base_user_layer_indent * layer_indent;
+                    }
+                    if (indent != want_indent && invalid_layer_indent == 0)
+                    {
+                        warn("warning[%d]: expected %d indent characters, got %d\n", lineno, want_indent, indent);
+                    }
+                }
+                else
+                {
+                    // First line in first user layer
+                    base_user_layer_indent = indent;
+                }
+
+                if (invalid_layer_indent)
+                {
+                    if (indent > invalid_layer_indent) continue;
+                    invalid_layer_indent = 0;
+                }
+
+                if (user_remap)
+                {
+                    // [Remap] binding
+                    parse_remap(line, lineno, user_remap);
+                    continue;
+                }
+
+                if (line[0] == '[')
+                {
+                    // Nested layer
+                    size_t line_length = strlen(line);
+                    if (strncmp(line, "[Remap]", line_length) == 0)
+                    {
+                        if (user_layer->device_index == 0xFF)
+                        {
+                            error("error[%d]: only device layers can have a [Remap] section\n", lineno);
+                            invalid_layer_indent = indent;
+                            continue;
+                        }
+                        user_remap = input_devices[user_layer->device_index].remap;
+                        continue;
+                    }
+
+                    if (line_length && parse_user_layer(line, lineno, line_length, &user_layer, &section)) continue;
+
+                    error("error[%d]: invalid user layer: %s\n", lineno, line);
+                    invalid_layer_indent = indent;
+                    continue;
+                }
+                if (line[0] == '(')
+                {
+                    // Command
+                    parse_command(line, lineno, user_layer);
+                    continue;
+                }
+                // Key = Value
+               parse_binding(line, lineno, user_layer);
+               break;
             }
             case configuration_invalid:
             {
@@ -344,6 +658,23 @@ int read_configuration()
         free(buffer);
     }
 
+    for (struct layer_path_reference* p = layer_path_references; p != NULL;)
+    {
+        struct layer_path_reference* next = p->next;
+        struct layer* layer = find_layer(p->lineno, p->parent_layer, p->path);
+        if (layer)
+        {
+            *p->field = layer->index;
+        }
+        else
+        {
+            error("error[%d]: layer not found: %s\n", p->lineno, p->path);
+        }
+        free(p);
+        p = next;
+    }
+    layer_path_references = NULL;
+
     for (int d = 0; d < nr_input_devices; d++)
     {
         finalizeInputDevice(&input_devices[d], remap);
@@ -358,9 +689,14 @@ int read_configuration()
     {
         for (int d = 0; d < nr_input_devices; d++)
         {
-            setLayerActionOverload(input_devices[d].layer, hyperKey, hyper_layer, hyperKey);
+            if (input_devices[d].layer->name[0] == 'D')
+            {
+                setLayerActionOverload(input_devices[d].layer, hyperKey, hyper_layer, 0, NULL, hyperKey);
+            }
         }
     }
+
+    log("info: found %d layers\n", nr_layers);
 
     return EXIT_SUCCESS;
 }
@@ -388,6 +724,9 @@ struct input_device* registerInputDevice(int lineno, const char* name, int numbe
     device->layer = layer;
     memset(device->pressed, 0, sizeof(device->pressed));
     device->top_activation = NULL;
+    device->inherit_remap = 0;
+
+    layer->device_index = nr_input_devices;
 
     nr_input_devices++;
 
@@ -409,13 +748,15 @@ void finalizeInputDevice(struct input_device* device, int* remap)
         }
     }
 
+    int inherit = device->inherit_remap;
+
     // Each device inherits the global remap array
     for (int r = 0; r < MAX_KEYMAP; r++)
     {
         // Per-device remapping
         if (device->remap[r] != 0) continue;
 
-        if (remap[r] != 0)
+        if (remap[r] != 0 && inherit)
         {
             // Inherit
             device->remap[r] = remap[r];
@@ -488,17 +829,24 @@ void setLayerKey(struct layer* layer, int key, unsigned int length, uint16_t* se
 /**
  * Set overload-layer key in layer.
  */
-void setLayerActionOverload(struct layer* layer, int key, struct layer* to_layer, uint16_t to_code)
+void setLayerActionOverload(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint16_t to_code)
 {
     layer->keymap[key].kind = ACTION_OVERLOAD_LAYER;
-    layer->keymap[key].data.overload_layer.layer_index = to_layer->index;
+    if (to_layer)
+    {
+        layer->keymap[key].data.overload_layer.layer_index = to_layer->index;
+    }
+    else
+    {
+        add_layer_path_reference(lineno, layer, to_layer_path, &layer->keymap[key].data.overload_layer.layer_index);
+    }
     layer->keymap[key].data.overload_layer.code = to_code;
 }
 
 /**
  * Register a layer.
  */
-struct layer* registerLayer(int lineno, char* name)
+struct layer* registerLayer(int lineno, struct layer* parent_layer, char* name)
 {
     if (nr_layers >= MAX_LAYERS)
     {
@@ -506,7 +854,12 @@ struct layer* registerLayer(int lineno, char* name)
         return NULL;
     }
 
-    if (strlen(name) >= MAX_LAYER_NAME)
+    if (parent_layer && strlen(parent_layer->name) + strlen(name) >= MAX_LAYER_NAME)
+    {
+        error("error[%d]: layer path is longer than %d: %s.%s\n", lineno, MAX_LAYER_NAME - 1, parent_layer->name, name);
+        return NULL;
+    }
+    else if (strlen(name) >= MAX_LAYER_NAME)
     {
         error("error[%d]: layer name is longer than %d: %s\n", lineno, MAX_LAYER_NAME - 1, name);
         return NULL;
@@ -515,10 +868,20 @@ struct layer* registerLayer(int lineno, char* name)
     struct layer* layer = malloc(sizeof(struct layer));
     layer->index = nr_layers;
     layer->device_index = 0xFF; // No device
-    strcpy(layer->name, name);
+    if (parent_layer)
+    {
+        char fullpath[2 * MAX_LAYER_NAME];
+        sprintf(fullpath, "%s.%s", parent_layer->name, name);
+        strcpy(layer->name, fullpath);
+    }
+    else
+    {
+        strcpy(layer->name, name);
+    }
+    layer->parent_layer = parent_layer;
     memset(layer->keymap, 0, sizeof(layer->keymap));
 
-    if (find_layer(lineno, layer->name))
+    if (find_layer(lineno, NULL, layer->name))
     {
         error("error[%d]: duplicate layer names: %s\n", lineno, layer->name);
     }

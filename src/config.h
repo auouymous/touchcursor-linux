@@ -56,6 +56,7 @@ struct layer
     uint8_t index;
     uint8_t device_index;
     char name[MAX_LAYER_NAME];
+    struct layer* parent_layer;
     struct action keymap[MAX_KEYMAP];
 };
 extern struct layer* layers[MAX_LAYERS];
@@ -95,6 +96,7 @@ struct input_device
     struct layer* layer;
     uint8_t pressed[MAX_KEYMAP]; // layer indices (+1) of each pressed key code
     struct activation* top_activation;
+    uint8_t inherit_remap;
 };
 extern struct input_device input_devices[MAX_DEVICES];
 extern int nr_input_devices;
@@ -132,11 +134,11 @@ void setLayerKey(struct layer* layer, int key, unsigned int length, uint16_t* se
 /**
  * Set overload-layer key in layer.
  */
-void setLayerActionOverload(struct layer* layer, int key, struct layer* to_layer, uint16_t to_code);
+void setLayerActionOverload(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint16_t to_code);
 
 /**
  * Register a layer.
  */
-struct layer* registerLayer(int lineno, char* name);
+struct layer* registerLayer(int lineno, struct layer* parent_layer, char* name);
 
 #endif
