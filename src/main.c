@@ -209,7 +209,7 @@ int main(int argc, char* argv[])
         error("error: failed to read the configuration\n");
         return EXIT_FAILURE;
     }
-    if (watch_configuration_file() != EXIT_SUCCESS)
+    if (automatic_reload && watch_configuration_file() != EXIT_SUCCESS)
     {
         error("error: failed to watch the configuration file\n");
         return EXIT_FAILURE;

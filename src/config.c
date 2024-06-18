@@ -13,6 +13,7 @@
 #include "strings.h"
 
 char configuration_file_path[256];
+int automatic_reload;
 
 int hyperKey;
 struct key_output keymap[MAX_KEYMAP] = { 0 };
@@ -98,6 +99,9 @@ enum sections
  * */
 int read_configuration()
 {
+    // Enable automatic reload
+    automatic_reload = 1;
+
     // Clear existing hyper key
     hyperKey = 0;
 
@@ -150,6 +154,12 @@ int read_configuration()
             if (strncmp(line, "[Bindings]", line_length) == 0)
             {
                 section = configuration_bindings;
+                continue;
+            }
+            if (strncmp(line, "[DisableAutomaticReload]", line_length) == 0)
+            {
+                section = configuration_none;
+                automatic_reload = 0;
                 continue;
             }
             error("error[%d]: invalid section: %s\n", lineno, line);

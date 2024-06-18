@@ -11,6 +11,11 @@
 extern char configuration_file_path[256];
 
 /**
+ * Automatically reload the configuration file when modified.
+ * */
+extern int automatic_reload;
+
+/**
  * The hyper key.
  * */
 extern int hyperKey;
