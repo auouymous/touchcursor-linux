@@ -17,6 +17,10 @@
 char configuration_file_path[256];
 int automatic_reload;
 
+enum input_method ukey_input_method;
+uint16_t ukey_compose_key;
+int ukeys_delay;
+
 struct layer* layers[MAX_LAYERS];
 static int nr_layers = 0;
 struct layer* transparent_layer;
@@ -273,7 +277,7 @@ static int get_key_value_argument(char* token, char* key, char** value)
 /**
  * Check if argument is an integer.
  * */
-static int is_integer(char* token)
+int is_integer(char* token)
 {
     if (*token == '-') token++;
     while (*token >= '0' && *token <= '9') token++;
@@ -468,10 +472,197 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
                 setLayerActionUnlock(layer, fromCode, all);
                 return;
             }
+            if (strcmp(action, "input-method") == 0)
+            {
+                // (input-method mode)
+                char* mode = next_argument(&tokens);
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                if (strcmp(mode, "none") == 0)
+                {
+                    setLayerActionInputMethod(layer, fromCode, input_method_none);
+                    return;
+                }
+                if (strcmp(mode, "compose") == 0)
+                {
+                    setLayerActionInputMethod(layer, fromCode, input_method_compose);
+                    return;
+                }
+                if (strcmp(mode, "iso14755") == 0)
+                {
+                    setLayerActionInputMethod(layer, fromCode, input_method_iso14755);
+                    return;
+                }
+                if (strcmp(mode, "gtk") == 0)
+                {
+                    setLayerActionInputMethod(layer, fromCode, input_method_gtk);
+                    return;
+                }
+                error("error[%d]: invalid mode: %s\n", lineno, mode);
+                return;
+            }
         }
 
         error("error[%d]: invalid action: %s\n", lineno, action);
         return;
+    }
+
+    if (tokens[0] == '"' || tokens[0] == '\'')
+    {
+        // Unicode string
+        char quote = tokens[0];
+        tokens++;
+        size_t length = strlen(tokens);
+        if (length && tokens[length - 1] == quote)
+        {
+            tokens[length - 1] = '\0'; // Remove end quote
+            uint8_t sequence[MAX_SEQUENCE_UKEY];
+            unsigned int index = 0;
+            for (char* p = tokens; *p != '\0';)
+            {
+                if (index >= MAX_SEQUENCE_UKEY)
+                {
+                    error("error[%d]: exceeded limit of %d UTF-8 characters in string: \"%s\"\n", lineno, MAX_SEQUENCE_UKEY / 3, tokens);
+                    return;
+                }
+                int codepoint = 0;
+                uint8_t c = *p;
+                uint i = 0;
+                if (c <= 0x7F)
+                {
+                    if (c == '\\')
+                    {
+                        // Escape sequence
+                        p++;
+                        switch (*p)
+                        {
+                            case '\\':
+                            {
+                                codepoint = (uint8_t)'\\';
+                                break;
+                            }
+                            case '\'':
+                            {
+                                codepoint = (uint8_t)'\'';
+                                break;
+                            }
+                            case '"':
+                            {
+                                codepoint = (uint8_t)'"';
+                                break;
+                            }
+                            case 'b':
+                            {
+                                codepoint = 0x08;
+                                break;
+                            }
+                            case 'e':
+                            {
+                                codepoint = 0x1B;
+                                break;
+                            }
+                            case 'n':
+                            {
+                                codepoint = 0x0A;
+                                break;
+                            }
+                            case 't':
+                            {
+                                codepoint = 0x09;
+                                break;
+                            }
+                            default:
+                            {
+                                error("error[%d]: invalid escape sequence in string: \\%c\n" \
+                                      "\tValid sequences are \\\\, \\', \\\", \\b, \\e, \\n, \\t\n", lineno, *p);
+                                return;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        codepoint = c;
+                    }
+                }
+                else if (c <= 0xDF)
+                {
+                    codepoint = (uint)(c & 0x1F) << 6;
+                    i = 1;
+                }
+                else if (c <= 0xEF)
+                {
+                    codepoint = (uint)(c & 0x0F) << 12;
+                    i = 2;
+                }
+                else if (c <= 0xF7)
+                {
+                    codepoint = (uint)(c & 0x07) << 18;
+                    i = 3;
+                }
+                else if (c <= 0xFB)
+                {
+                    codepoint = (uint)(c & 0x03) << 24;
+                    i = 4;
+                }
+                else if (c <= 0xFD)
+                {
+                    codepoint = (uint)(c & 0x01) << 30;
+                    i = 5;
+                }
+                p++;
+                for (; i > 0 && *p != '\0'; i--, p++)
+                {
+                    c = *p;
+                    if ((c & 0xC0) != 0x80) break;
+                    codepoint |= (uint)(c & 0x3F) << ((i - 1) * 6);
+                }
+                if (i > 0 || codepoint & 0xFF000000)
+                {
+                    error("error[%d]: invalid UTF-8 characters in string: \"%s\"\n", lineno, tokens);
+                    return;
+                }
+                sequence[index++] = codepoint & 0xFF;
+                sequence[index++] = (codepoint >> 8) & 0xFF;
+                sequence[index++] = (codepoint >> 16) & 0xFF;
+            }
+            if (index == 0)
+            {
+                error("error[%d]: expected a string of 1-%d UTF-8 characters\n", lineno, MAX_SEQUENCE_UKEY / 3);
+                return;
+            }
+            setLayerUKey(layer, fromCode, index / 3, sequence);
+            return;
+        }
+
+        error("error[%d]: invalid unicode string: %s\n", lineno, tokens);
+        return;
+    }
+
+    if (tokens[0] == 'U')
+    {
+        size_t length = strlen(tokens);
+        if (length >= 3 && tokens[1] == '+')
+        {
+            // Unicode codepoint
+            tokens += 2;
+            int codepoint;
+            if (sscanf(tokens, "%X", &codepoint) != 1 || codepoint & 0xFF000000)
+            {
+                error("error[%d]: invalid Unicode codepoint: U+%s\n", lineno, tokens);
+                return;
+            }
+
+            uint8_t sequence[3];
+            sequence[0] = codepoint & 0xFF;
+            sequence[1] = (codepoint >> 8) & 0xFF;
+            sequence[2] = (codepoint >> 16) & 0xFF;
+            setLayerUKey(layer, fromCode, 1, sequence);
+            return;
+        }
     }
 
     uint16_t sequence[MAX_SEQUENCE];
@@ -615,6 +806,10 @@ int read_configuration()
 {
     // Enable automatic reload
     automatic_reload = 1;
+
+    ukey_input_method = input_method_none;
+    ukey_compose_key = KEY_CANCEL;
+    ukeys_delay = 5;
 
     // Reset the input devices
     nr_input_devices = 0;
@@ -796,6 +991,75 @@ int read_configuration()
                             }
 
                             automatic_reload = 0;
+                            continue;
+                        }
+                        if (strcmp(setting, "input-method") == 0)
+                        {
+                            // (input-method mode)
+                            char* mode = next_argument(&tokens);
+                            if (tokens)
+                            {
+                                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                                continue;
+                            }
+
+                            if (strcmp(mode, "none") == 0)
+                            {
+                                ukey_input_method = input_method_none;
+                                continue;
+                            }
+                            if (strcmp(mode, "compose") == 0)
+                            {
+                                ukey_input_method = input_method_compose;
+                                continue;
+                            }
+                            if (strcmp(mode, "iso14755") == 0)
+                            {
+                                ukey_input_method = input_method_iso14755;
+                                continue;
+                            }
+                            if (strcmp(mode, "gtk") == 0)
+                            {
+                                ukey_input_method = input_method_gtk;
+                                continue;
+                            }
+                            error("error[%d]: invalid mode: %s\n", lineno, mode);
+                            continue;
+                        }
+                        if (strcmp(setting, "unicode-compose-key") == 0)
+                        {
+                            // (unicode-compose-key key)
+                            char* code_name = next_argument(&tokens);
+                            if (tokens)
+                            {
+                                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                                continue;
+                            }
+
+                            int code = convertKeyStringToCode(code_name);
+                            if (code == 0)
+                            {
+                                error("error[%d]: invalid key: expected a single key: %s\n", lineno, code_name);
+                                continue;
+                            }
+
+                            ukey_compose_key = code;
+                            continue;
+                        }
+                        if (strcmp(setting, "ukeys-delay") == 0)
+                        {
+                            // (ukeys-delay microseconds)
+                            char* delay_str = next_argument(&tokens);
+                            if (tokens)
+                            {
+                                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                                continue;
+                            }
+
+                            int delay_us;
+                            if (!parse_integer(&delay_us, delay_str, 0, 100000, "delay", lineno)) continue;
+
+                            ukeys_delay = delay_us;
                             continue;
                         }
                         if (strcmp(setting, "default-layer-leds") == 0)
@@ -1106,6 +1370,38 @@ void setLayerKey(struct layer* layer, int key, unsigned int length, uint16_t* se
 }
 
 /**
+ * Set codepoint or codepoint sequence in layer.
+ */
+void setLayerUKey(struct layer* layer, int key, unsigned int length, uint8_t* sequence)
+{
+    switch (length)
+    {
+        case 0: break;
+        case 1:
+        {
+            layer->keymap[key].kind = ACTION_UKEY;
+            layer->keymap[key].data.ukey.codepoint[0] = sequence[0];
+            layer->keymap[key].data.ukey.codepoint[1] = sequence[1];
+            layer->keymap[key].data.ukey.codepoint[2] = sequence[2];
+            break;
+        }
+        default:
+        {
+            layer->keymap[key].kind = ACTION_UKEYS;
+            for (int i = 0; i < 3 * length; i++)
+            {
+                layer->keymap[key].data.ukeys.codepoints[i] = sequence[i];
+            }
+            for (int i = 3 * length; i < MAX_SEQUENCE_UKEY; i++)
+            {
+                layer->keymap[key].data.ukeys.codepoints[i] = 0;
+            }
+            break;
+        }
+    }
+}
+
+/**
  * Set overload-mod key in layer.
  */
 void setLayerActionOverloadMod(struct layer* layer, int key, int lineno, unsigned int length, uint16_t* sequence, uint16_t to_code, uint16_t timeout_ms)
@@ -1202,6 +1498,15 @@ void setLayerActionUnlock(struct layer* layer, int key, uint8_t all)
 {
     layer->keymap[key].kind = ACTION_UNLOCK;
     layer->keymap[key].data.unlock.all = all;
+}
+
+/**
+ * Set input-method key in layer.
+ */
+void setLayerActionInputMethod(struct layer* layer, int key, enum input_method mode)
+{
+    layer->keymap[key].kind = ACTION_INPUT_METHOD;
+    layer->keymap[key].data.input_method.mode = mode;
 }
 
 /**

@@ -46,6 +46,8 @@ struct test_keys
 };
 static struct test_keys test_keys[] = {
     {KEY_LEFTSHIFT, "leftshift"}, // not mapped in layer
+    {KEY_LEFTCTRL, "leftctrl"}, // not mapped in layer
+    {KEY_CANCEL, "cancel"}, // not mapped in layer
 
     {KEY_O, "other"}, // not mapped in layer
 
@@ -67,6 +69,11 @@ static struct test_keys test_keys[] = {
     {KEY_DOT, "latch"},
     {KEY_SLASH, "lock"},
     {KEY_BACKSLASH, "lock-overlay"},
+    {KEY_F1, "akey"}, {KEY_F2, "ukey"}, {KEY_F3, "lukey"},
+    {KEY_F4, "IM-none"},
+    {KEY_F5, "IM-compose"},
+    {KEY_F6, "IM-iso14755"},
+    {KEY_F7, "IM-gtk"},
 
     {0, NULL}
 };
@@ -80,6 +87,10 @@ static int lookup_key_code(char* name)
     {
         if (strcmp(name, test_keys[i].name) == 0) return test_keys[i].code;
     }
+
+    int code = atoi(name);
+    if (is_integer(name) && code >= 1 && code <= 65535) return code;
+
     return 0;
 }
 
@@ -342,6 +353,33 @@ static void testNormalTyping()
     TYPE("overload-500ms down, wait 250, other down, overload-500ms up", EXPECT, "overload-500ms down, other down, overload-500ms up");
     TYPE("overload-500ms down, wait 1000, other down", EXPECT, "other down");
         processKey(test_device, EV_KEY, KEY("overload-500ms"), 0, timestamp); // Deactivate to avoid memory leaks
+
+    // Save and restore pressed modifiers while sending input method sequences
+    TYPE("leftctrl down, IM-iso14755 tap, ukey tap, leftctrl up", EXPECT,
+        "leftctrl tap, leftctrl down, leftshift down, 4 tap, 48 tap, 2 tap, leftshift up, leftctrl up, leftctrl tap"); // ctrl-shift 3 B 1
+
+    TYPE("IM-none tap, akey tap", EXPECT, "leftshift down, 30 tap, leftshift up"); // shift A
+    TYPE("IM-compose tap, akey tap", EXPECT, "cancel tap, 11 tap, 11 tap, 11 tap, 3 tap, 2 tap"); // cancel 0 0 0 3 2
+    TYPE("IM-iso14755 tap, akey tap", EXPECT, "leftctrl down, leftshift down, 5 tap, 2 tap, leftshift up, leftctrl up"); // ctrl-shift 4 1
+    TYPE("IM-gtk tap, akey tap", EXPECT, "leftctrl down, leftshift down, 22 tap, leftshift up, leftctrl up, 5 tap, 2 tap, 57 tap"); // ctrl-shift-U 4 1 space
+
+    TYPE("IM-none tap, ukey tap", EXPECT, ""); // no output
+    TYPE("IM-compose tap, ukey tap", EXPECT, "cancel tap, 11 tap, 11 tap, 11 tap, 20 tap, 35 tap"); // cancel 0 0 0 T H
+    TYPE("IM-iso14755 tap, ukey tap", EXPECT, "leftctrl down, leftshift down, 4 tap, 48 tap, 2 tap, leftshift up, leftctrl up"); // ctrl-shift 3 B 1
+    TYPE("IM-gtk tap, ukey tap", EXPECT, "leftctrl down, leftshift down, 22 tap, leftshift up, leftctrl up, 4 tap, 48 tap, 2 tap, 57 tap"); // ctrl-shift-U 3 B 1 space
+
+    TYPE("IM-none tap, lukey tap", EXPECT, ""); // no output
+    TYPE("IM-compose tap, lukey tap", EXPECT,
+        "cancel tap, 11 tap, 11 tap, 11 tap, 20 tap, 35 tap, cancel tap, 11 tap, 11 tap, 11 tap, 20 tap, 23 tap");
+        // cancel 0 0 0 T H cancel 0 0 0 T I
+    TYPE("IM-iso14755 tap, lukey tap", EXPECT,
+        "leftctrl down, leftshift down, 4 tap, 48 tap, 2 tap, leftshift up, leftctrl up, " \
+        "leftctrl down, leftshift down, 4 tap, 48 tap, 3 tap, leftshift up, leftctrl up");
+        // ctrl-shift 3 B 1 ctrl-shift 3 B 2
+    TYPE("IM-gtk tap, lukey tap", EXPECT,
+        "leftctrl down, leftshift down, 22 tap, leftshift up, leftctrl up, 4 tap, 48 tap, 2 tap, 57 tap, " \
+        "leftctrl down, leftshift down, 22 tap, leftshift up, leftctrl up, 4 tap, 48 tap, 3 tap, 57 tap");
+        // ctrl-shift-U 3 B 1 space ctrl-shift-U 3 B 2 space
 }
 
 /*
@@ -428,6 +466,17 @@ int main()
     setLayerActionLatch(test_device->layer, KEY("latch"), test_layer, 0, NULL);
     setLayerActionLock(test_device->layer, KEY("lock"), test_layer, 0, NULL, 0);
     setLayerActionLock(test_device->layer, KEY("lock-overlay"), test_layer, 0, NULL, 1);
+
+    ukey_compose_key = KEY("cancel");
+    uint8_t usequence[6];
+    usequence[0] = 'A'; usequence[1] = 0x00; usequence[2] = 0x00; setLayerUKey(test_device->layer, KEY("akey"), 1, usequence); // A
+    usequence[0] = 0xB1; usequence[1] = 0x03; usequence[2] = 0x00; setLayerUKey(test_device->layer, KEY("ukey"), 1, usequence); // α
+    usequence[0] = 0xB1; usequence[1] = 0x03; usequence[2] = 0x00; usequence[3] = 0xB2; usequence[4] = 0x03; usequence[5] = 0x00;
+        setLayerUKey(test_device->layer, KEY("lukey"), 2, usequence); // αβ
+    setLayerActionInputMethod(test_device->layer, KEY("IM-none"), input_method_none);
+    setLayerActionInputMethod(test_device->layer, KEY("IM-compose"), input_method_compose);
+    setLayerActionInputMethod(test_device->layer, KEY("IM-iso14755"), input_method_iso14755);
+    setLayerActionInputMethod(test_device->layer, KEY("IM-gtk"), input_method_gtk);
 
     finalizeInputDevice(test_device, remap);
 

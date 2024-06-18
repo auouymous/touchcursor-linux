@@ -15,6 +15,7 @@
 #define MAX_KEYMAP (MAX_KEYMAP_CODE + 1)
 #define MAX_LAYER_LEDS 8
 #define MAX_SEQUENCE 5
+#define MAX_SEQUENCE_UKEY 3 * 3
 #define MAX_SEQUENCE_OVERLOAD_MOD (MAX_SEQUENCE - 3)
 
 /**
@@ -28,6 +29,28 @@ extern char configuration_file_path[256];
 extern int automatic_reload;
 
 /**
+ * Input methods for unicode codepoints.
+ * */
+enum input_method
+{
+    input_method_none,
+    input_method_compose,
+    input_method_iso14755,
+    input_method_gtk,
+};
+extern enum input_method ukey_input_method;
+
+/**
+ * Prefix key for codepoints using the compose input method.
+ * */
+extern uint16_t ukey_compose_key;
+
+/**
+ * Microsecond delay between sending each codepoint.
+ * */
+extern int ukeys_delay;
+
+/**
  * Key action.
  * */
 enum action_kind
@@ -36,12 +59,15 @@ enum action_kind
     ACTION_DISABLED,        // do nothing
     ACTION_KEY,             // emit a single key code
     ACTION_KEYS,            // emit multiple key codes
+    ACTION_UKEY,            // emit a single unicode key sequence
+    ACTION_UKEYS,           // emit multiple unicode key sequences
     ACTION_OVERLOAD_MOD,    // press keys on hold, or emit a single key code on tap
     ACTION_OVERLOAD_LAYER,  // activate layer on hold, or emit a single key code on tap
     ACTION_SHIFT_LAYER,     // activate layer on hold
     ACTION_LATCH_LAYER,     // activate layer on hold, or activate layer for a single key press after released
     ACTION_LOCK_LAYER,      // activate layer on hold, or activate layer after released until unlocked
     ACTION_UNLOCK,          // unlock locked layer or all activations
+    ACTION_INPUT_METHOD,    // change input method
 };
 struct action
 {
@@ -53,6 +79,12 @@ struct action
         struct {
             uint16_t codes[MAX_SEQUENCE];
         } keys;
+        struct {
+            uint8_t codepoint[3];
+        } ukey;
+        struct {
+            uint8_t codepoints[MAX_SEQUENCE_UKEY];
+        } ukeys;
         struct {
             uint16_t codes[MAX_SEQUENCE_OVERLOAD_MOD];
             uint16_t code;
@@ -76,6 +108,9 @@ struct action
         struct {
             uint8_t all;
         } unlock;
+        struct {
+            enum input_method mode;
+        } input_method;
     } data;
 };
 
@@ -157,6 +192,11 @@ extern int nr_input_devices;
 int find_configuration_file();
 
 /**
+ * Check if argument is an integer.
+ * */
+int is_integer(char* token);
+
+/**
  * Reads the configuration file.
  * */
 int read_configuration();
@@ -187,6 +227,11 @@ void setLayerActionDisabled(struct layer* layer, int key);
 void setLayerKey(struct layer* layer, int key, unsigned int length, uint16_t* sequence);
 
 /**
+ * Set codepoint or codepoint sequence in layer.
+ */
+void setLayerUKey(struct layer* layer, int key, unsigned int length, uint8_t* sequence);
+
+/**
  * Set overload-mod key in layer.
  */
 void setLayerActionOverloadMod(struct layer* layer, int key, int lineno, unsigned int length, uint16_t* sequence, uint16_t to_code, uint16_t timeout_ms);
@@ -215,6 +260,11 @@ void setLayerActionLock(struct layer* layer, int key, struct layer* to_layer, in
  * Set unlock key in layer.
  */
 void setLayerActionUnlock(struct layer* layer, int key, uint8_t all);
+
+/**
+ * Set input-method key in layer.
+ */
+void setLayerActionInputMethod(struct layer* layer, int key, enum input_method mode);
 
 /**
  * Register a layer.

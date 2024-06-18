@@ -5,6 +5,24 @@
 #include "strings.h"
 
 /**
+ * Check if comment character is inside a quoted sequence.
+ *
+ * @param s The string to be trimmed.
+ * @param p Position of comment character in string.
+ * @return char* Position of comment character or character after quoted sequence containing it.
+ * */
+static char* is_comment_in_quoted_sequence(char* s, char* p, char quote)
+{
+    char* q = strchr(s, quote);
+    if (q != NULL && q < p)
+    {
+        q = strchr(q + 1, quote);
+        if (q != NULL && q > p) return q + 1;
+    }
+    return p;
+}
+
+/**
  * Trims trailing comments from a string.
  *
  * @param s The string to be trimmed.
@@ -17,6 +35,16 @@ char* trim_comment(char* s)
         char* p = strchr(s, '#');
         if (p != NULL)
         {
+            char* q1 = is_comment_in_quoted_sequence(s, p, '"');
+            char* q2 = is_comment_in_quoted_sequence(s, p, '\'');
+            char* q = (q1 > q2 ? q1 : q2); // Get outer quoted sequence
+            if (q > p)
+            {
+                // '#' is inside a string, try again after the quoted sequence
+                trim_comment(q);
+                return s;
+            }
+
             // p points to the start of the comment.
             *p = '\0';
         }
