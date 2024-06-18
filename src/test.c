@@ -67,6 +67,7 @@ static struct test_keys test_keys[] = {
     {KEY_B, "overload-500ms"},
     {KEY_COMMA, "shift"},
     {KEY_DOT, "latch"},
+    {KEY_APOSTROPHE, "latch-menu"},
     {KEY_SLASH, "lock"},
     {KEY_BACKSLASH, "lock-overlay"},
     {KEY_F1, "akey"}, {KEY_F2, "ukey"}, {KEY_F3, "lukey"},
@@ -305,6 +306,15 @@ static void testNormalTyping()
     // Mapped key from latched layer is output twice along with its default code
     TYPE("latch down, m1 tap, m1 tap, latch up, m1 tap", EXPECT, "layer_m1 tap, layer_m1 tap, m1 tap");
 
+    // Mapped key from latched-menu layer is output along with its default code
+    TYPE("latch-menu tap, m1 tap, m1 tap", EXPECT, "layer_m1 tap, m1 tap");
+
+    // Mapped key from latched-menu layer is output along with its default code
+    TYPE("latch-menu down, m1 tap, latch-menu up, m1 tap", EXPECT, "layer_m1 tap, m1 tap");
+
+    // Mapped key from latched-menu layer is output twice along with its default code
+    TYPE("latch-menu down, m1 tap, m1 tap, latch-menu up, m1 tap", EXPECT, "layer_m1 tap, layer_m1 tap, m1 tap");
+
     // Mapped key from locked layer is output twice
     TYPE("lock tap, m1 tap, m1 tap, lock tap, m1 tap", EXPECT, "layer_m1 tap, layer_m1 tap, m1 tap");
 
@@ -411,6 +421,9 @@ static void testFastTyping()
     // Mapped key from latched layer is output along with its default code
     TYPE("latch down, m1 down, latch up, m1 up, m1 tap", EXPECT, "layer_m1 tap, m1 tap");
 
+    // Mapped key from latched-menu layer is output along with its default code
+    TYPE("latch-menu down, m1 down, latch-menu up, m1 up, m1 tap", EXPECT, "layer_m1 tap, m1 tap");
+
     // Mapped key from locked layer is output along with its default code
     TYPE("lock down, m1 down, lock up, m1 up, m1 tap", EXPECT, "layer_m1 tap, m1 tap");
 
@@ -443,6 +456,8 @@ int main()
 
     struct layer* test_layer = registerLayer(0, NULL, "test Bindings");
 
+    test_device->layer->menu_layer = test_layer;
+
     uint16_t sequence[4];
 
     // default config
@@ -464,6 +479,7 @@ int main()
     setLayerActionOverload(test_device->layer, KEY("overload-500ms"), test_layer, 0, NULL, KEY("overload-500ms"), 500);
     setLayerActionShift(test_device->layer, KEY("shift"), test_layer, 0, NULL);
     setLayerActionLatch(test_device->layer, KEY("latch"), test_layer, 0, NULL);
+    setLayerActionLatchMenu(test_device->layer, KEY("latch-menu"), 0);
     setLayerActionLock(test_device->layer, KEY("lock"), test_layer, 0, NULL, 0);
     setLayerActionLock(test_device->layer, KEY("lock-overlay"), test_layer, 0, NULL, 1);
 

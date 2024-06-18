@@ -72,6 +72,7 @@ enum action_kind
     ACTION_OVERLOAD_LAYER,  // activate layer on hold, or emit a single key code on tap
     ACTION_SHIFT_LAYER,     // activate layer on hold
     ACTION_LATCH_LAYER,     // activate layer on hold, or activate layer for a single key press after released
+    ACTION_LATCH_MENU,      // activate nearest Menu layer on hold, or activate layer for a single key press after released
     ACTION_LOCK_LAYER,      // activate layer on hold, or activate layer after released until unlocked
     ACTION_UNLOCK,          // unlock locked layer or all activations
     ACTION_INPUT_METHOD,    // change input method
@@ -135,6 +136,7 @@ struct layer
     uint8_t is_layout;
     char name[MAX_LAYER_NAME];
     struct layer* parent_layer;
+    struct layer* menu_layer;
     struct action keymap[MAX_KEYMAP];
     uint8_t leds[MAX_LAYER_LEDS];
 };
@@ -261,6 +263,11 @@ void setLayerActionShift(struct layer* layer, int key, struct layer* to_layer, i
  * Set latch-layer key in layer.
  */
 void setLayerActionLatch(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path);
+
+/**
+ * Set latch-menu key in layer, for current [Menu] layer.
+ */
+void setLayerActionLatchMenu(struct layer* layer, int key, int lineno);
 
 /**
  * Set lock-layer key in layer.
