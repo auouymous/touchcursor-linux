@@ -56,6 +56,7 @@ static struct test_keys test_keys[] = {
     {KEY_R, "or1"}, {KEY_O, "or1_to"}, // other remap
     {KEY_E, "mr2"}, {KEY_K, "mr2_to"}, {KEY_5, "layer_mr2"}, // mapped remap
 
+    {KEY_D, "disabled"},
     {KEY_SPACE, "overload"},
 
     {0, NULL}
@@ -239,6 +240,12 @@ static void testNormalTyping()
     TYPE("mr2 tap", EXPECT, "m2 tap");
 
     TYPE("overload down, mr2 tap, overload up", EXPECT, "layer_m2 tap");
+
+    // The disabled key should be output
+    TYPE("disabled tap", EXPECT, "disabled tap");
+
+    // Nothing should be output
+    TYPE("overload down, disabled tap, overload up", EXPECT, "");
 }
 
 /*
@@ -303,6 +310,7 @@ int main()
     remap[KEY("mr2")] = KEY("m2");
     sequence[0] = KEY("layer_mr2"); setLayerKey(test_layer, KEY("mr2"), 1, sequence);
 
+    setLayerActionDisabled(test_layer, KEY("disabled"));
     setLayerActionOverload(test_device->layer, KEY("overload"), test_layer, 0, NULL, KEY("overload"));
 
     finalizeInputDevice(test_device, remap);

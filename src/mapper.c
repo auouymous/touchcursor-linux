@@ -129,6 +129,7 @@ static void process_action(struct input_device* device, struct layer* layer, int
             error("error: the service did not properly pass-through a transparent key before calling process_action()\n");
             break;
         }
+        case ACTION_DISABLED: break;
         case ACTION_KEY:
         {
             emit(EV_KEY, action->data.key.code, value);

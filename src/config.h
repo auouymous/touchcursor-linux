@@ -27,6 +27,7 @@ extern int automatic_reload;
 enum action_kind
 {
     ACTION_TRANSPARENT,     // pass-through to lower layer
+    ACTION_DISABLED,        // do nothing
     ACTION_KEY,             // emit a single key code
     ACTION_KEYS,            // emit multiple key codes
     ACTION_OVERLOAD_LAYER,  // activate layer on hold, or emit a single key code on tap
@@ -125,6 +126,11 @@ void finalizeInputDevice(struct input_device* device, int* remap);
  * Remap bindings to maintain compatibility with existing [Bindings].
  */
 void remapBindings(int* remap, struct layer* layer);
+
+/**
+ * Disable key in layer.
+ */
+void setLayerActionDisabled(struct layer* layer, int key);
 
 /**
  * Set key or key sequence in layer.

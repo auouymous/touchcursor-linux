@@ -268,6 +268,18 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
         {
             tokens[length - 1] = '\0'; // Remove ')'
             action = strsep(&tokens, " ");
+            if (strcmp(action, "disabled") == 0)
+            {
+                // (disabled)
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                setLayerActionDisabled(layer, fromCode);
+                return;
+            }
             if (strcmp(action, "overload") == 0)
             {
                 // (overload to_layer [tap=to_code])
@@ -794,6 +806,14 @@ void remapBindings(int* remap, struct layer* layer)
     {
         layer->keymap[b] = keymap[b];
     }
+}
+
+/**
+ * Disable key in layer.
+ */
+void setLayerActionDisabled(struct layer* layer, int key)
+{
+    layer->keymap[key].kind = ACTION_DISABLED;
 }
 
 /**
