@@ -1,4 +1,5 @@
 #include <linux/uinput.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "keys.h"
@@ -516,6 +517,29 @@ static const struct key buttons[] = {
 
     {NULL, NULL, 0}
 };
+
+/**
+ * Output the key list to console.
+ * */
+void outputKeyList()
+{
+        for (int i = 0; keys[i].name != NULL; i++)
+        {
+            if (keys[i].symbol != NULL)
+            {
+                printf("% 4d:  KEY_%s    %s    KEY_%s    %s\n", keys[i].code, keys[i].name, keys[i].name, keys[i].symbol, keys[i].symbol);
+            }
+            else
+            {
+                printf("% 4d:  KEY_%s    %s\n", keys[i].code, keys[i].name, keys[i].name);
+            }
+        }
+
+        for (int i = 0; buttons[i].name != NULL; i++)
+        {
+            printf("% 4d:  BTN_%s\n", buttons[i].code, buttons[i].name);
+        }
+}
 
 /**
  * Converts a key string (e.g. "KEY_I") to its corresponding code.

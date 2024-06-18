@@ -17,6 +17,11 @@
 #endif
 
 /**
+ * Output the key list to console.
+ * */
+void outputKeyList();
+
+/**
  * Converts a key string "KEY_I" to its corresponding code.
  * */
 int convertKeyStringToCode(char* keyString);
