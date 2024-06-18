@@ -10,6 +10,7 @@
 #include <sys/inotify.h>
 #include <unistd.h>
 
+#include "beep.h"
 #include "binding.h"
 #include "buffers.h"
 #include "config.h"
@@ -176,6 +177,7 @@ static void clean_up()
     release_configuration_file_watch();
     release_inputs();
     release_output();
+    closeSpeaker();
 }
 
 /**
@@ -245,6 +247,7 @@ int main(int argc, char* argv[])
         error("error: could not create the virtual output device\n");
         return EXIT_FAILURE;
     }
+    openSpeaker();
     log("info: running\n");
     // Read events
     while (1)

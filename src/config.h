@@ -52,6 +52,18 @@ extern uint16_t ukey_compose_key;
 extern int ukeys_delay;
 
 /**
+ * Frequency and duration of beeps when disabled keys are pressed.
+ * */
+extern int beep_on_disabled_press_frequency;
+extern int beep_on_disabled_press_duration_ms;
+
+/**
+ * Frequency and duration of beeps when non-ASCII codepoints are pressed in the 'none' input method.
+ * */
+extern int beep_on_invalid_codepoint_frequency;
+extern int beep_on_invalid_codepoint_duration_ms;
+
+/**
  * Array of codepoint strings for ACTION_UKEYS_STR actions.
  * */
 extern uint8_t** codepoint_strings;

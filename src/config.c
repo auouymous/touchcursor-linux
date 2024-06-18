@@ -21,6 +21,11 @@ enum input_method ukey_input_method;
 uint16_t ukey_compose_key;
 int ukeys_delay;
 
+int beep_on_disabled_press_frequency;
+int beep_on_disabled_press_duration_ms;
+int beep_on_invalid_codepoint_frequency;
+int beep_on_invalid_codepoint_duration_ms;
+
 uint8_t** codepoint_strings;
 int nr_codepoint_strings = 0;
 int max_codepoint_strings;
@@ -918,6 +923,11 @@ int read_configuration()
     ukey_compose_key = KEY_CANCEL;
     ukeys_delay = 5;
 
+    beep_on_disabled_press_frequency = 0;
+    beep_on_disabled_press_duration_ms = 0;
+    beep_on_invalid_codepoint_frequency = 0;
+    beep_on_invalid_codepoint_duration_ms = 0;
+
     // Free existing codepoint strings
     if (nr_codepoint_strings)
     {
@@ -1181,6 +1191,48 @@ int read_configuration()
                             if (!parse_integer(&delay_us, delay_str, 0, 100000, "delay", lineno)) continue;
 
                             ukeys_delay = delay_us;
+                            continue;
+                        }
+                        if (strcmp(setting, "beep-on-disabled-press") == 0)
+                        {
+                            // (beep-on-disabled-press frequency duration_ms)
+                            char* frequency_str = next_argument(&tokens);
+                            char* duration_str = next_argument(&tokens);
+                            if (tokens)
+                            {
+                                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                                continue;
+                            }
+
+                            int frequency;
+                            if (!parse_integer(&frequency, frequency_str, 200, 8000, "frequency", lineno)) continue;
+
+                            int duration_ms;
+                            if (!parse_integer(&duration_ms, duration_str, 10, 1000, "duration", lineno)) continue;
+
+                            beep_on_disabled_press_frequency = frequency;
+                            beep_on_disabled_press_duration_ms = duration_ms;
+                            continue;
+                        }
+                        if (strcmp(setting, "beep-on-invalid-codepoint") == 0)
+                        {
+                            // (beep-on-invalid-codepoint frequency duration_ms)
+                            char* frequency_str = next_argument(&tokens);
+                            char* duration_str = next_argument(&tokens);
+                            if (tokens)
+                            {
+                                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                                continue;
+                            }
+
+                            int frequency;
+                            if (!parse_integer(&frequency, frequency_str, 200, 8000, "frequency", lineno)) continue;
+
+                            int duration_ms;
+                            if (!parse_integer(&duration_ms, duration_str, 10, 1000, "duration", lineno)) continue;
+
+                            beep_on_invalid_codepoint_frequency = frequency;
+                            beep_on_invalid_codepoint_duration_ms = duration_ms;
                             continue;
                         }
                         if (strcmp(setting, "default-layer-leds") == 0)
