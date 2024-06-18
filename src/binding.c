@@ -92,7 +92,7 @@ static int bind_input(struct input_device* device)
 {
     // Open the keyboard device
     log("info: attempting to capture: %s\n", device->event_path);
-    device->file_descriptor = open(device->event_path, O_RDONLY);
+    device->file_descriptor = open(device->event_path, O_RDWR | O_NONBLOCK);
     if (device->file_descriptor < 0)
     {
         error("error: failed to open the input device: %s\n", strerror(errno));
@@ -231,6 +231,11 @@ void read_inputs()
                     struct timeval timestamp = {event.input_event_sec, event.input_event_usec};
                     processKey(device, event.type, event.code, event.value, timestamp);
                 }
+                else if (event.type == EV_LED)
+                {
+                    // Input device leds can be externaly altered, update state
+                    device->leds[event.code] = event.value;
+                }
                 else
                 {
                     emit(event.type, event.code, event.value);
@@ -263,7 +268,7 @@ int bind_output()
     // Enable key press/release events
     if (ioctl(output_file_descriptor, UI_SET_EVBIT, EV_KEY) < 0)
     {
-        error("error: failed to set EV_KEY on output (UI_SET_KEYBIT, EV_KEY: %s)\n", strerror(errno));
+        error("error: failed to set EV_KEY on output (UI_SET_EVBIT, EV_KEY: %s)\n", strerror(errno));
         return EXIT_FAILURE;
     }
     // Enable the set of KEY events

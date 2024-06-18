@@ -11,6 +11,7 @@
 #include "buffers.h"
 #include "config.h"
 #include "keys.h"
+#include "leds.h"
 #include "strings.h"
 
 char configuration_file_path[256];
@@ -19,6 +20,8 @@ int automatic_reload;
 struct layer* layers[MAX_LAYERS];
 static int nr_layers = 0;
 struct layer* transparent_layer;
+
+static uint8_t default_layer_leds[MAX_LAYER_LEDS];
 
 struct input_device input_devices[MAX_DEVICES];
 int nr_input_devices;
@@ -478,6 +481,42 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
 }
 
 /**
+ * Parse a list of leds.
+ * */
+static int parse_leds(uint8_t* leds, char* tokens, int lineno)
+{
+    char* token;
+    unsigned int index = 0;
+    while ((token = strsep(&tokens, " ")) != NULL)
+    {
+        if (index >= MAX_LAYER_LEDS)
+        {
+            error("error[%d]: exceeded limit of %d leds: %s\n", lineno, MAX_LAYER_LEDS, token);
+            return 0;
+        }
+        int state = 1;
+        if (token[0] == '!')
+        {
+            state = 0;
+            token++;
+        }
+        int led = convertLedStringToCode(token);
+        if (led == -1)
+        {
+            error("error[%d]: invalid led: expected one or more led names with or without a '!' prefix to turn it off: %s\n", lineno, token);
+            return 0;
+        }
+        leds[index++] = (state << 4) | (led + 1);
+    }
+    if (index == 0)
+    {
+        error("error[%d]: invalid led: expected one or more led names with or without a '!' prefix to turn it off\n", lineno);
+        return 0;
+    }
+    return 1;
+}
+
+/**
  * Parse a command in a user layer.
  * */
 static void parse_command(char* line, int lineno, struct layer* user_layer)
@@ -549,6 +588,21 @@ static void parse_command(char* line, int lineno, struct layer* user_layer)
             user_layer->is_layout = 1;
             return;
         }
+        if (strcmp(command, "leds") == 0)
+        {
+            // (leds led...)
+
+            // This command overrides the (default-layer-leds) setting
+            memset(user_layer->leds, 0, sizeof(user_layer->leds));
+            if (!parse_leds(user_layer->leds, tokens, lineno)) return;
+
+            if (user_layer->device_index != 0xFF)
+            {
+                error("error[%d]: leds command is not valid in a device layer\n", lineno);
+                return;
+            }
+            return;
+        }
     }
 
     error("error[%d]: invalid command: %s\n", lineno, command);
@@ -577,6 +631,8 @@ int read_configuration()
     memset(layers, 0, sizeof(layers));
     nr_layers = 0;
     transparent_layer = NULL;
+
+    memset(default_layer_leds, 0, sizeof(default_layer_leds));
 
     // This layer is only for compatbility with existing configurations
     struct layer* hyper_layer = NULL;
@@ -740,6 +796,25 @@ int read_configuration()
                             }
 
                             automatic_reload = 0;
+                            continue;
+                        }
+                        if (strcmp(setting, "default-layer-leds") == 0)
+                        {
+                            // (default-layer-leds led...)
+                            parse_leds(default_layer_leds, tokens, lineno);
+                            continue;
+                        }
+                        if (strcmp(setting, "modifier-layer-leds") == 0)
+                        {
+                            // (modifier-layer-leds led...)
+                            if (transparent_layer == NULL)
+                            {
+                                transparent_layer = registerLayer(lineno, NULL, "Transparent");
+                            }
+
+                            // This setting overrides the (default-layer-leds) setting
+                            memset(transparent_layer->leds, 0, sizeof(transparent_layer->leds));
+                            parse_leds(transparent_layer->leds, tokens, lineno);
                             continue;
                         }
                     }
@@ -920,6 +995,7 @@ struct input_device* registerInputDevice(int lineno, const char* name, int numbe
     memset(device->pressed, 0, sizeof(device->pressed));
     device->top_activation = NULL;
     device->inherit_remap = 0;
+    memset(device->leds, 0, sizeof(device->leds));
 
     layer->device_index = nr_input_devices;
 
@@ -1166,6 +1242,7 @@ struct layer* registerLayer(int lineno, struct layer* parent_layer, char* name)
     }
     layer->parent_layer = parent_layer;
     memset(layer->keymap, 0, sizeof(layer->keymap));
+    memcpy(layer->leds, default_layer_leds, sizeof(layer->leds));
 
     if (find_layer(lineno, NULL, layer->name))
     {

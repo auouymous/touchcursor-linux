@@ -15,6 +15,7 @@
 #include "config.h"
 #include "emit.h"
 #include "keys.h"
+#include "leds.h"
 #include "mapper.h"
 
 volatile sig_atomic_t should_reload = 0;
@@ -200,6 +201,11 @@ int main(int argc, char* argv[])
     else if (argc == 2 && strcmp(argv[1], "list-keys") == 0)
     {
         outputKeyList();
+        return EXIT_SUCCESS;
+    }
+    else if (argc == 2 && strcmp(argv[1], "list-leds") == 0)
+    {
+        outputLedList();
         return EXIT_SUCCESS;
     }
     else if (argc > 1)

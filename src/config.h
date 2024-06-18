@@ -1,8 +1,11 @@
 #ifndef config_h
 #define config_h
 
+#include <linux/uinput.h>
 #include <stdint.h>
 #include <sys/time.h>
+
+#define MAX_LEDBIT LED_CHARGING
 
 #define MAX_DEVICES 4
 // Layer indices are uint8_t and some are offset by one to use zero as undefined
@@ -10,6 +13,7 @@
 #define MAX_LAYER_NAME 61
 #define MAX_KEYMAP_CODE 255
 #define MAX_KEYMAP (MAX_KEYMAP_CODE + 1)
+#define MAX_LAYER_LEDS 8
 #define MAX_SEQUENCE 5
 #define MAX_SEQUENCE_OVERLOAD_MOD (MAX_SEQUENCE - 3)
 
@@ -86,6 +90,7 @@ struct layer
     char name[MAX_LAYER_NAME];
     struct layer* parent_layer;
     struct action keymap[MAX_KEYMAP];
+    uint8_t leds[MAX_LAYER_LEDS];
 };
 extern struct layer* layers[MAX_LAYERS];
 extern struct layer* transparent_layer;
@@ -141,6 +146,7 @@ struct input_device
     uint8_t pressed[MAX_KEYMAP]; // layer indices (+1) of each pressed key code
     struct activation* top_activation;
     uint8_t inherit_remap;
+    int leds[MAX_LEDBIT]; // state of each led
 };
 extern struct input_device input_devices[MAX_DEVICES];
 extern int nr_input_devices;

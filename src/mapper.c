@@ -8,6 +8,7 @@
 #include "buffers.h"
 #include "emit.h"
 #include "keys.h"
+#include "leds.h"
 #include "mapper.h"
 
 #define PRESSED_TO_LAYER(device, code) layers[device->pressed[code] - 1]
@@ -16,6 +17,24 @@
 #define MAX_POOL_ACTIVATIONS 8
 static struct activation* activation_pool[MAX_POOL_ACTIVATIONS];
 static int nr_pool_activations = 0;
+
+/**
+ * Toggle layer leds.
+ * */
+static void toggle_layer_leds(struct input_device* device, struct layer* layer, int state)
+{
+    for (int i = 0; i < MAX_LAYER_LEDS; i++)
+    {
+        uint8_t led = layer->leds[i];
+        if (led == 0) break;
+
+        int led_state = led >> 4;
+        if (state)
+            set_led(device, (led & 0xF) - 1, led_state);
+        else if (led_state)
+            set_led(device, (led & 0xF) - 1, 0);
+    }
+}
 
 /**
  * Activate layer.
@@ -32,6 +51,8 @@ static struct activation* activate_layer(struct input_device* device, struct lay
     activation->kind = kind;
     // activation->data.* = 0;
 
+    toggle_layer_leds(device, layer, 1);
+
     if (device->top_activation != NULL) device->top_activation->next = activation;
     device->top_activation = activation;
     return activation;
@@ -42,9 +63,15 @@ static struct activation* activate_layer(struct input_device* device, struct lay
  * */
 static void deactivate_layer(struct input_device* device, struct activation* activation)
 {
+    // Turn off this layer's leds
+    toggle_layer_leds(device, activation->layer, 0);
+
     if (activation->prev) activation->prev->next = activation->next;
     if (activation->next) activation->next->prev = activation->prev;
     if (device->top_activation == activation) device->top_activation = activation->prev;
+
+    // Turn any leds back on that the deactivated layer might have turned off
+    if (device->top_activation) toggle_layer_leds(device, device->top_activation->layer, 1);
 
     if (nr_pool_activations < MAX_POOL_ACTIVATIONS)
     {
