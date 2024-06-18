@@ -368,6 +368,10 @@ static void testNormalTyping()
     TYPE("leftctrl down, IM-iso14755 tap, ukey tap, leftctrl up", EXPECT,
         "leftctrl tap, leftctrl down, leftshift down, 4 tap, 48 tap, 2 tap, leftshift up, leftctrl up, leftctrl tap"); // ctrl-shift 3 B 1
 
+    // Shifted layer
+    TYPE("IM-iso14755 tap, leftshift down, ukey tap, leftshift up", EXPECT,
+        "leftshift tap, leftctrl down, leftshift down, 4 tap, 10 tap, 2 tap, leftshift up, leftctrl up, leftshift tap"); // ctrl-shift 3 9 1
+
     TYPE("IM-none tap, akey tap", EXPECT, "leftshift down, 30 tap, leftshift up"); // shift A
     TYPE("IM-compose tap, akey tap", EXPECT, "cancel tap, 11 tap, 11 tap, 11 tap, 3 tap, 2 tap"); // cancel 0 0 0 3 2
     TYPE("IM-iso14755 tap, akey tap", EXPECT, "leftctrl down, leftshift down, 5 tap, 2 tap, leftshift up, leftctrl up"); // ctrl-shift 4 1
@@ -454,6 +458,9 @@ int main()
     int remap[MAX_KEYMAP];
     memset(remap, 0, sizeof(remap));
 
+    struct layer* shift_layer = registerLayer(0, test_device->layer, "test Device shifted");
+    test_device->layer->mod_layers[0] = shift_layer->index + 1;
+
     struct layer* test_layer = registerLayer(0, NULL, "test Bindings");
 
     test_device->layer->menu_layer = test_layer;
@@ -487,6 +494,7 @@ int main()
     uint8_t usequence[6];
     usequence[0] = 'A'; usequence[1] = 0x00; usequence[2] = 0x00; setLayerUKey(test_device->layer, KEY("akey"), 1, usequence); // A
     usequence[0] = 0xB1; usequence[1] = 0x03; usequence[2] = 0x00; setLayerUKey(test_device->layer, KEY("ukey"), 1, usequence); // α
+    usequence[0] = 0x91; usequence[1] = 0x03; usequence[2] = 0x00; setLayerUKey(shift_layer, KEY("ukey"), 1, usequence); // Α
     usequence[0] = 0xB1; usequence[1] = 0x03; usequence[2] = 0x00; usequence[3] = 0xB2; usequence[4] = 0x03; usequence[5] = 0x00;
         setLayerUKey(test_device->layer, KEY("lukey"), 2, usequence); // αβ
     setLayerActionInputMethod(test_device->layer, KEY("IM-none"), input_method_none);

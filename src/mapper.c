@@ -98,6 +98,37 @@ static void deactivate_overlays(struct input_device* device, struct activation* 
     }
 }
 
+static uint8_t modifier_map[] = {
+     0,  1,  1,  1,  2,  3,  3,  3,  2,  3,  3,  3,  2,  3,  3,  3,  4,  5,  5,  5,  6,  7,  7,  7,  6,  7,  7,  7,  6,  7,  7,  7,
+     4,  5,  5,  5,  6,  7,  7,  7,  6,  7,  7,  7,  6,  7,  7,  7,  4,  5,  5,  5,  6,  7,  7,  7,  6,  7,  7,  7,  6,  7,  7,  7,
+     8,  9,  9,  9, 10, 11, 11, 11, 10, 11, 11, 11, 10, 11, 11, 11, 12, 13, 13, 13, 14, 15, 15, 15, 14, 15, 15, 15, 14, 15, 15, 15,
+    12, 13, 13, 13, 14, 15, 15, 15, 14, 15, 15, 15, 14, 15, 15, 15, 12, 13, 13, 13, 14, 15, 15, 15, 14, 15, 15, 15, 14, 15, 15, 15,
+     8,  9,  9,  9, 10, 11, 11, 11, 10, 11, 11, 11, 10, 11, 11, 11, 12, 13, 13, 13, 14, 15, 15, 15, 14, 15, 15, 15, 14, 15, 15, 15,
+    12, 13, 13, 13, 14, 15, 15, 15, 14, 15, 15, 15, 14, 15, 15, 15, 12, 13, 13, 13, 14, 15, 15, 15, 14, 15, 15, 15, 14, 15, 15, 15,
+     8,  9,  9,  9, 10, 11, 11, 11, 10, 11, 11, 11, 10, 11, 11, 11, 12, 13, 13, 13, 14, 15, 15, 15, 14, 15, 15, 15, 14, 15, 15, 15,
+    12, 13, 13, 13, 14, 15, 15, 15, 14, 15, 15, 15, 14, 15, 15, 15, 12, 13, 13, 13, 14, 15, 15, 15, 14, 15, 15, 15, 14, 15, 15, 15,
+};
+
+/**
+ * Lookup a modifier key layer.
+ */
+static struct layer* find_modifier_key_layer(struct layer* layer, int code)
+{
+    uint8_t index = modifier_map[output_modifier_states];
+    if (index > 0)
+    {
+        uint8_t mod_layer_index = layer->mod_layers[index - 1]; // 15 elements offset by 1
+        if (mod_layer_index > 0)
+        {
+            struct layer* mod_layer = layers[mod_layer_index - 1]; // Layer indices are offset by 1
+            if (mod_layer->keymap[code].kind != ACTION_TRANSPARENT) return mod_layer;
+            // else pass unset keys to unmodified layer
+        }
+        // else no modifier layer defined, pass to unmodified layer
+    }
+    return layer;
+}
+
 /**
  * Lookup a key layer for an input device.
  */
@@ -109,9 +140,10 @@ static struct layer* find_key_layer(struct input_device* device, int code, int v
         struct activation* activation = device->top_activation;
         while (activation != NULL)
         {
-            if (activation->layer->keymap[code].kind != ACTION_TRANSPARENT)
+            struct layer* layer = find_modifier_key_layer(activation->layer, code);
+            if (layer->keymap[code].kind != ACTION_TRANSPARENT || activation->layer->keymap[code].kind != ACTION_TRANSPARENT)
             {
-                return activation->layer;
+                return layer;
             }
             activation = activation->prev;
         }
@@ -129,7 +161,7 @@ static struct layer* find_key_layer(struct input_device* device, int code, int v
         }
     }
 
-    return device->layer;
+    return find_modifier_key_layer(device->layer, code);
 }
 
 /**
@@ -879,7 +911,7 @@ void processKey(struct input_device* device, int type, int code, int value, stru
         }
         else
         {
-            process_action(device, device->layer, code, value, timestamp);
+            process_action(device, find_modifier_key_layer(device->layer, code), code, value, timestamp);
         }
     }
     else if (code == device->top_activation->code)

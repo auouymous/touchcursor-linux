@@ -139,6 +139,7 @@ struct layer
     struct layer* menu_layer;
     struct action keymap[MAX_KEYMAP];
     uint8_t leds[MAX_LAYER_LEDS];
+    uint8_t mod_layers[15]; // layer indices offset by 1, zero represents no modifier layer
 };
 extern struct layer* layers[MAX_LAYERS];
 extern struct layer* transparent_layer;
