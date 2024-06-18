@@ -325,6 +325,19 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
                 setLayerActionShift(layer, fromCode, NULL, lineno, to_layer_path);
                 return;
             }
+            if (strcmp(action, "latch") == 0)
+            {
+                // (latch to_layer)
+                char* to_layer_path = next_argument(&tokens);
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                setLayerActionLatch(layer, fromCode, NULL, lineno, to_layer_path);
+                return;
+            }
         }
 
         error("error[%d]: invalid action: %s\n", lineno, action);
@@ -889,6 +902,22 @@ void setLayerActionShift(struct layer* layer, int key, struct layer* to_layer, i
     else
     {
         add_layer_path_reference(lineno, layer, to_layer_path, &layer->keymap[key].data.shift_layer.layer_index);
+    }
+}
+
+/**
+ * Set latch-layer key in layer.
+ */
+void setLayerActionLatch(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path)
+{
+    layer->keymap[key].kind = ACTION_LATCH_LAYER;
+    if (to_layer)
+    {
+        layer->keymap[key].data.latch_layer.layer_index = to_layer->index;
+    }
+    else
+    {
+        add_layer_path_reference(lineno, layer, to_layer_path, &layer->keymap[key].data.latch_layer.layer_index);
     }
 }
 

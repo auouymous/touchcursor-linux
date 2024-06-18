@@ -27,6 +27,7 @@ static struct activation* activate_layer(struct input_device* device, struct lay
     activation->layer = layer;
     activation->prev = device->top_activation;
     // activation->next = NULL;
+    // activation->action = NULL;
     activation->code = code;
     activation->kind = kind;
     // activation->data.* = 0;
@@ -191,6 +192,34 @@ static void process_action(struct input_device* device, struct layer* layer, int
             }
             break;
         }
+        case ACTION_LATCH_LAYER:
+        {
+            // Ignore repeat events
+            if (IS_PRESS(value))
+            {
+                activate_layer(device, layers[action->data.latch_layer.layer_index], ACTIVATION_LATCH_LAYER, code);
+            }
+            else if (IS_RELEASE(value))
+            {
+                struct activation* activation = find_activation_by_code(device, code);
+                if (activation != NULL)
+                {
+                    if (activation->kind == ACTIVATION_SHIFT_LAYER)
+                    {
+                        // Latch-layer key was released as a shift activation
+                        deactivate_layer(device, activation);
+                    }
+                    else
+                    {
+                        // The layer will be deactivated on the first key press
+                        activation->action = action;
+                        activation->code = 0;
+                    }
+                }
+                // else latch-layer key was released a second time, and was unlatched on press
+            }
+            break;
+        }
     }
 
     device->pressed[code] = (IS_RELEASE(value) ? 0 : LAYER_TO_PRESSED(layer));
@@ -291,6 +320,35 @@ void processKey(struct input_device* device, int type, int code, int value)
             case ACTIVATION_SHIFT_LAYER:
             {
                 process_action(device, find_key_layer(device, code, value), code, value);
+                break;
+            }
+            case ACTIVATION_LATCH_LAYER:
+            {
+                struct layer* layer = find_key_layer(device, code, value);
+
+                if (IS_PRESS(value))
+                {
+                    struct action* action = activation->action;
+                    if (action != NULL)
+                    {
+                        // Latch-layer key was released and a key was pressed, deactivate layer
+                        deactivate_layer(device, activation);
+
+                        if (&layer->keymap[code] == action)
+                        {
+                            // Latch-layer key was pressed a second time, unlatch
+                            device->pressed[code] = LAYER_TO_PRESSED(layer);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        // A key was pressed before releasing latch-layer key, convert to a shift activation
+                        activation->kind = ACTIVATION_SHIFT_LAYER;
+                    }
+                }
+
+                process_action(device, layer, code, value);
                 break;
             }
         }
