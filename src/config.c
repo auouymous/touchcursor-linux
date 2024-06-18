@@ -29,6 +29,7 @@ struct layer* layers[MAX_LAYERS];
 static int nr_layers = 0;
 struct layer* transparent_layer;
 static uint8_t disable_unset_keys[MAX_LAYERS];
+static uint8_t mod_layers[MAX_LAYERS];
 
 static uint8_t default_layer_leds[MAX_LAYER_LEDS];
 
@@ -36,6 +37,7 @@ struct input_device input_devices[MAX_DEVICES];
 int nr_input_devices;
 
 static regex_t re_layer_name;
+static regex_t re_mod_layer_name;
 
 struct layer_path_reference
 {
@@ -807,9 +809,9 @@ static void parse_command(char* line, int lineno, struct layer* user_layer)
                 return;
             }
 
-            if (user_layer->device_index != 0xFF || user_layer->name[0] == ' ')
+            if (user_layer->device_index != 0xFF || user_layer->name[0] == ' ' || mod_layers[user_layer->index])
             {
-                error("error[%d]: is-layout command is not valid in a device layer or [Menu] layer\n", lineno);
+                error("error[%d]: is-layout command is not valid in a device layer, [Menu] or modifier layer\n", lineno);
                 return;
             }
             user_layer->is_layout = 1;
@@ -840,9 +842,9 @@ static void parse_command(char* line, int lineno, struct layer* user_layer)
             memset(user_layer->leds, 0, sizeof(user_layer->leds));
             if (!parse_leds(user_layer->leds, tokens, lineno)) return;
 
-            if (user_layer->device_index != 0xFF)
+            if (user_layer->device_index != 0xFF || mod_layers[user_layer->index])
             {
-                error("error[%d]: leds command is not valid in a device layer\n", lineno);
+                error("error[%d]: leds command is not valid in a device or modifier layer\n", lineno);
                 return;
             }
             return;
@@ -882,6 +884,12 @@ static void parse_command(char* line, int lineno, struct layer* user_layer)
 
             if (layer->menu_layer)
             {
+                if (mod_layers[user_layer->index])
+                {
+                    warn("warning[%d]: layer being copied has a [Menu]: %s\n" \
+                         "\tModifier layers can not have a [Menu] section.\n" \
+                         "\tNot copying its [Menu] to \"%s\".", lineno, layer_path, user_layer->name);
+                }
                 if (user_layer->device_index == 0xFF && !user_layer->is_layout)
                 {
                     warn("warning[%d]: layer being copied has a [Menu]: %s\n" \
@@ -936,6 +944,7 @@ int read_configuration()
     nr_layers = 0;
     transparent_layer = NULL;
     memset(disable_unset_keys, 0, sizeof(disable_unset_keys));
+    memset(mod_layers, 0, sizeof(mod_layers));
 
     memset(default_layer_leds, 0, sizeof(default_layer_leds));
 
@@ -957,6 +966,8 @@ int read_configuration()
     enum sections section = configuration_none;
     regfree(&re_layer_name);
     regcomp(&re_layer_name, "^[a-z0-9_-]+$", REG_EXTENDED|REG_NOSUB); // Uppercase names are reserved for sections
+    regfree(&re_mod_layer_name);
+    regcomp(&re_mod_layer_name, "^(SHIFT|CTRL|ALT|META)([+](SHIFT|CTRL|ALT|META)){0,3}[]]$", REG_EXTENDED|REG_NOSUB);
     struct layer* user_layer = NULL;
     int* user_remap = NULL;
     int invalid_layer_indent = 0;
@@ -1280,6 +1291,76 @@ int read_configuration()
                         disable_unset_keys[user_layer->index] = 1;
                         section = configuration_layer;
                         continue;
+                    }
+
+                    // Check for modifier layers
+                    if (line[line_length - 1] == ']')
+                    {
+                        // Skip '['
+                        char* s = &line[1];
+
+                        if (regexec(&re_mod_layer_name, s, 0, NULL, 0) == 0)
+                        {
+                            struct layer* parent_layer = user_layer;
+                            if (mod_layers[parent_layer->index])
+                            {
+                                error("error[%d]: modifier layers can not be nested inside other modifier layers\n", lineno);
+                                invalid_layer_indent = indent;
+                                continue;
+                            }
+
+                            line[line_length - 1] = '\0'; // Remove ']'
+
+                            user_layer = registerLayer(lineno, user_layer, s);
+                            mod_layers[user_layer->index] = 1;
+                            int mods = 0;
+                            char *mod_token;
+                            while ((mod_token = strsep(&s, "+")) != NULL)
+                            {
+                                if (strcmp(mod_token, "SHIFT") == 0)
+                                {
+                                    if (mods & 1)
+                                    {
+                                        error("error[%d]: duplicate SHIFT in modifier layer name\n", lineno);
+                                    }
+                                    mods |= 1;
+                                }
+                                if (strcmp(mod_token, "CTRL") == 0)
+                                {
+                                    if (mods & 2)
+                                    {
+                                        error("error[%d]: duplicate CTRL in modifier layer name\n", lineno);
+                                    }
+                                    mods |= 2;
+                                }
+                                if (strcmp(mod_token, "ALT") == 0)
+                                {
+                                    if (mods & 4)
+                                    {
+                                        error("error[%d]: duplicate ALT in modifier layer name\n", lineno);
+                                    }
+                                    mods |= 4;
+                                }
+                                if (strcmp(mod_token, "META") == 0)
+                                {
+                                    if (mods & 8)
+                                    {
+                                        error("error[%d]: duplicate META in modifier layer name\n", lineno);
+                                    }
+                                    mods |= 8;
+                                }
+                            }
+                            if (parent_layer->mod_layers[mods])
+                            {
+                                error("error[%d]: duplicate %s modifier layers in %s\n", lineno, user_layer->name, parent_layer->name);
+                            }
+                            else
+                            {
+                                parent_layer->mod_layers[mods - 1] = user_layer->index + 1; // Offset by 1
+                            }
+                            section = configuration_layer;
+                            continue;
+                        }
                     }
 
                     if (line_length && parse_user_layer(line, lineno, line_length, &user_layer, &section)) continue;
@@ -1718,6 +1799,7 @@ struct layer* registerLayer(int lineno, struct layer* parent_layer, char* name)
     layer->menu_layer = NULL;
     memset(layer->keymap, 0, sizeof(layer->keymap));
     memcpy(layer->leds, default_layer_leds, sizeof(layer->leds));
+    memset(layer->mod_layers, 0, sizeof(layer->mod_layers));
 
     if (find_layer(lineno, NULL, layer->name))
     {
