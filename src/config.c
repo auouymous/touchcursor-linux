@@ -113,6 +113,82 @@ enum sections
 };
 
 /**
+ * Parse a line in a remap section.
+ * */
+static void parse_remap(char* line, int lineno, int* remap)
+{
+    char* tokens = line;
+    char* token = strsep(&tokens, "=");
+    int fromCode = convertKeyStringToCode(token);
+    if (fromCode == 0)
+    {
+        error("error[%d]: invalid key: expected a single key: %s\n", lineno, token);
+        return;
+    }
+    if (fromCode > MAX_KEYMAP_CODE)
+    {
+        error("error[%d]: left key code must be less than %d: %s\n", lineno, MAX_KEYMAP, token);
+        return;
+    }
+    token = strsep(&tokens, "=");
+    int toCode = convertKeyStringToCode(token);
+    if (toCode == 0)
+    {
+        error("error[%d]: invalid key: expected a single key: %s\n", lineno, token);
+        return;
+    }
+    if (toCode > MAX_KEYMAP_CODE)
+    {
+        error("error[%d]: right key code must be less than %d: %s\n", lineno, MAX_KEYMAP, token);
+        return;
+    }
+    remap[fromCode] = toCode;
+}
+
+/**
+ * Parse a line in a binding section.
+ * */
+static void parse_binding(char* line, int lineno, struct layer* layer)
+{
+    char* tokens = line;
+    char* token = strsep(&tokens, "=");
+    int fromCode = convertKeyStringToCode(token);
+    if (fromCode == 0)
+    {
+        error("error[%d]: invalid key: expected a single key: %s\n", lineno, token);
+        return;
+    }
+    if (fromCode > MAX_KEYMAP_CODE)
+    {
+        error("error[%d]: left key code must be less than %d: %s\n", lineno, MAX_KEYMAP, token);
+        return;
+    }
+    uint16_t sequence[MAX_SEQUENCE];
+    unsigned int index = 0;
+    while ((token = strsep(&tokens, ",")) != NULL)
+    {
+        if (index >= MAX_SEQUENCE)
+        {
+            error("error[%d]: exceeded limit of %d keys in sequence: %s\n", lineno, MAX_SEQUENCE, token);
+            return;
+        }
+        int toCode = convertKeyStringToCode(token);
+        if (toCode == 0)
+        {
+            error("error[%d]: invalid key: expected a single key or comma separated list of keys: %s\n", lineno, token);
+            return;
+        }
+        sequence[index++] = toCode;
+    }
+    if (index == 0)
+    {
+        error("error[%d]: expected a single key or comma separated list of keys\n", lineno);
+        return;
+    }
+    setLayerKey(layer, fromCode, index, sequence);
+}
+
+/**
  * Reads the configuration file.
  * */
 int read_configuration()
@@ -223,32 +299,7 @@ int read_configuration()
             }
             case configuration_remap:
             {
-                char* tokens = line;
-                char* token = strsep(&tokens, "=");
-                int fromCode = convertKeyStringToCode(token);
-                if (fromCode == 0)
-                {
-                    error("error[%d]: invalid key: expected a single key: %s\n", lineno, token);
-                    continue;
-                }
-                if (fromCode > MAX_KEYMAP_CODE)
-                {
-                    error("error[%d]: left key code must be less than %d: %s\n", lineno, MAX_KEYMAP, token);
-                    continue;
-                }
-                token = strsep(&tokens, "=");
-                int toCode = convertKeyStringToCode(token);
-                if (toCode == 0)
-                {
-                    error("error[%d]: invalid key: expected a single key: %s\n", lineno, token);
-                    continue;
-                }
-                if (toCode > MAX_KEYMAP_CODE)
-                {
-                    error("error[%d]: right key code must be less than %d: %s\n", lineno, MAX_KEYMAP, token);
-                    continue;
-                }
-                remap[fromCode] = toCode;
+                parse_remap(line, lineno, remap);
                 break;
             }
             case configuration_hyper:
@@ -272,42 +323,7 @@ int read_configuration()
             }
             case configuration_bindings:
             {
-                char* tokens = line;
-                char* token = strsep(&tokens, "=");
-                int fromCode = convertKeyStringToCode(token);
-                if (fromCode == 0)
-                {
-                    error("error[%d]: invalid key: expected a single key: %s\n", lineno, token);
-                    continue;
-                }
-                if (fromCode > MAX_KEYMAP_CODE)
-                {
-                    error("error[%d]: left key code must be less than %d: %s\n", lineno, MAX_KEYMAP, token);
-                    continue;
-                }
-                uint16_t sequence[MAX_SEQUENCE];
-                unsigned int index = 0;
-                while ((token = strsep(&tokens, ",")) != NULL)
-                {
-                    if (index >= MAX_SEQUENCE)
-                    {
-                        error("error[%d]: exceeded limit of %d keys in sequence: %s\n", lineno, MAX_SEQUENCE, token);
-                        continue;
-                    }
-                    int toCode = convertKeyStringToCode(token);
-                    if (toCode == 0)
-                    {
-                        error("error[%d]: invalid key: expected a single key or comma separated list of keys: %s\n", lineno, token);
-                        continue;
-                    }
-                    sequence[index++] = toCode;
-                }
-                if (index == 0)
-                {
-                    error("error[%d]: expected a single key or comma separated list of keys\n", lineno);
-                    continue;
-                }
-                setLayerKey(hyper_layer, fromCode, index, sequence);
+                parse_binding(line, lineno, hyper_layer);
                 break;
             }
             case configuration_invalid:
