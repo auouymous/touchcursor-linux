@@ -60,6 +60,8 @@ static struct test_keys test_keys[] = {
     {KEY_SPACE, "overload"},
     {KEY_COMMA, "shift"},
     {KEY_DOT, "latch"},
+    {KEY_SLASH, "lock"},
+    {KEY_BACKSLASH, "lock-overlay"},
 
     {0, NULL}
 };
@@ -263,6 +265,36 @@ static void testNormalTyping()
 
     // Mapped key from latched layer is output twice along with its default code
     TYPE("latch down, m1 tap, m1 tap, latch up, m1 tap", EXPECT, "layer_m1 tap, layer_m1 tap, m1 tap");
+
+    // Mapped key from locked layer is output twice
+    TYPE("lock tap, m1 tap, m1 tap, lock tap, m1 tap", EXPECT, "layer_m1 tap, layer_m1 tap, m1 tap");
+
+    // Mapped key from locked layer is output along with its default code
+    TYPE("lock down, m1 tap, lock up, m1 tap", EXPECT, "layer_m1 tap, m1 tap");
+
+    // Mapped key from locked layer is output twice along with its default code
+    TYPE("lock down, m1 tap, m1 tap, lock up, m1 tap", EXPECT, "layer_m1 tap, layer_m1 tap, m1 tap");
+
+    // Mapped key from locked-overlay layer is output twice
+    TYPE("lock-overlay tap, m1 tap, m1 tap, lock-overlay tap, m1 tap, m1 tap", EXPECT, "layer_m1 tap, m1 tap, layer_m1 tap, m1 tap");
+
+    // Mapped key from locked-overlay layer is output along with its default code
+    TYPE("lock-overlay down, m1 tap, lock-overlay up, m1 tap", EXPECT, "layer_m1 tap, m1 tap");
+
+    // Mapped key from locked-overlay layer is output twice along with its default code
+    TYPE("lock-overlay down, m1 tap, m1 tap, lock-overlay up, m1 tap", EXPECT, "layer_m1 tap, layer_m1 tap, m1 tap");
+
+    // Mapped key from locked-overlay layer is output twice
+    TYPE("lock tap, lock-overlay tap, m1 tap, m1 tap, lock-overlay tap, lock tap, m1 tap", EXPECT, "layer_m1 tap, layer_m1 tap, m1 tap");
+
+    // Mapped key from locked-overlay layer is output twice, the unlock should also clear the lock-overlay
+    TYPE("lock tap, lock-overlay tap, m1 tap, m1 tap, lock tap, m1 tap", EXPECT, "layer_m1 tap, layer_m1 tap, m1 tap");
+
+    // Mapped key from locked-overlay layer is output along with its default code
+    TYPE("lock tap, lock-overlay down, m1 tap, lock-overlay up, lock tap, m1 tap", EXPECT, "layer_m1 tap, m1 tap");
+
+    // Mapped key from locked-overlay layer is output twice along with its default code
+    TYPE("lock tap, lock-overlay down, m1 tap, m1 tap, lock-overlay up, lock tap, m1 tap", EXPECT, "layer_m1 tap, layer_m1 tap, m1 tap");
 }
 
 /*
@@ -291,6 +323,12 @@ static void testFastTyping()
 
     // Mapped key from latched layer is output along with its default code
     TYPE("latch down, m1 down, latch up, m1 up, m1 tap", EXPECT, "layer_m1 tap, m1 tap");
+
+    // Mapped key from locked layer is output along with its default code
+    TYPE("lock down, m1 down, lock up, m1 up, m1 tap", EXPECT, "layer_m1 tap, m1 tap");
+
+    // Mapped key from locked-overlay layer is output along with its default code
+    TYPE("lock-overlay down, m1 down, lock-overlay up, m1 up, m1 tap", EXPECT, "layer_m1 tap, m1 tap");
 }
 
 /*
@@ -336,6 +374,8 @@ int main()
     setLayerActionOverload(test_device->layer, KEY("overload"), test_layer, 0, NULL, KEY("overload"));
     setLayerActionShift(test_device->layer, KEY("shift"), test_layer, 0, NULL);
     setLayerActionLatch(test_device->layer, KEY("latch"), test_layer, 0, NULL);
+    setLayerActionLock(test_device->layer, KEY("lock"), test_layer, 0, NULL, 0);
+    setLayerActionLock(test_device->layer, KEY("lock-overlay"), test_layer, 0, NULL, 1);
 
     finalizeInputDevice(test_device, remap);
 

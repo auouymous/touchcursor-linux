@@ -6,7 +6,7 @@
 #define MAX_DEVICES 4
 // Layer indices are uint8_t and some are offset by one to use zero as undefined
 #define MAX_LAYERS 255
-#define MAX_LAYER_NAME 62
+#define MAX_LAYER_NAME 61
 #define MAX_KEYMAP_CODE 255
 #define MAX_KEYMAP (MAX_KEYMAP_CODE + 1)
 #define MAX_SEQUENCE 5
@@ -33,6 +33,8 @@ enum action_kind
     ACTION_OVERLOAD_LAYER,  // activate layer on hold, or emit a single key code on tap
     ACTION_SHIFT_LAYER,     // activate layer on hold
     ACTION_LATCH_LAYER,     // activate layer on hold, or activate layer for a single key press after released
+    ACTION_LOCK_LAYER,      // activate layer on hold, or activate layer after released until unlocked
+    ACTION_UNLOCK,          // unlock locked layer or all activations
 };
 struct action
 {
@@ -54,6 +56,13 @@ struct action
         struct {
             uint8_t layer_index;
         } latch_layer;
+        struct {
+            uint8_t layer_index;
+            uint8_t is_overlay;
+        } lock_layer;
+        struct {
+            uint8_t all;
+        } unlock;
     } data;
 };
 
@@ -64,6 +73,7 @@ struct layer
 {
     uint8_t index;
     uint8_t device_index;
+    uint8_t is_layout;
     char name[MAX_LAYER_NAME];
     struct layer* parent_layer;
     struct action keymap[MAX_KEYMAP];
@@ -78,6 +88,7 @@ enum activation_kind
     ACTIVATION_OVERLOAD_LAYER,
     ACTIVATION_SHIFT_LAYER,
     ACTIVATION_LATCH_LAYER,
+    ACTIVATION_LOCK_LAYER,
 };
 struct activation
 {
@@ -92,6 +103,10 @@ struct activation
             uint8_t active; // after second event
             uint16_t delayed_code; // delay first key press
         } overload_layer;
+        struct {
+            uint8_t layer_index;
+            uint8_t is_overlay;
+        } lock_layer;
     } data;
 };
 
@@ -162,6 +177,16 @@ void setLayerActionShift(struct layer* layer, int key, struct layer* to_layer, i
  * Set latch-layer key in layer.
  */
 void setLayerActionLatch(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path);
+
+/**
+ * Set lock-layer key in layer.
+ */
+void setLayerActionLock(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint8_t is_overlay);
+
+/**
+ * Set unlock key in layer.
+ */
+void setLayerActionUnlock(struct layer* layer, int key, uint8_t all);
 
 /**
  * Register a layer.

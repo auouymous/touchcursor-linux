@@ -57,6 +57,20 @@ static void deactivate_layer(struct input_device* device, struct activation* act
 }
 
 /**
+ * Deactivate lock-overlay layers above this lock-layer activation.
+ * */
+static void deactivate_overlays(struct input_device* device, struct activation* activation)
+{
+    for (struct activation* a = activation->next; a != NULL;)
+    {
+        struct activation* next = a->next;
+        // Any lock-layer activation above this must be a lock-overlay
+        if (a->kind == ACTIVATION_LOCK_LAYER) deactivate_layer(device, a);
+        a = next;
+    }
+}
+
+/**
  * Lookup a key layer for an input device.
  */
 static struct layer* find_key_layer(struct input_device* device, int code, int value)
@@ -220,6 +234,111 @@ static void process_action(struct input_device* device, struct layer* layer, int
             }
             break;
         }
+        case ACTION_LOCK_LAYER:
+        {
+            // Ignore repeat events
+            if (IS_PRESS(value))
+            {
+                // Find a previous activation for this lock-layer action
+                struct activation* activation = FIND_ACTIVATION(device, activation->action == action);
+                if (activation != NULL)
+                {
+                    // Key that locked activation was pressed a second time, unlock it
+                    deactivate_overlays(device, activation);
+                    deactivate_layer(device, activation);
+                }
+                else
+                {
+                    int can_lock = 1;
+                    if (action->data.lock_layer.is_overlay)
+                    {
+                        // Find a locked non-overlay lock-layer activation with a released key
+                        struct activation* activation = FIND_ACTIVATION(device,
+                            activation->kind == ACTIVATION_LOCK_LAYER && !activation->data.lock_layer.is_overlay && activation->action != NULL);
+                        if (activation == NULL) can_lock = 0;
+                    }
+                    if (can_lock)
+                    {
+                        uint8_t layer_index = action->data.lock_layer.layer_index;
+                        struct activation* activation = activate_layer(device, layers[layer_index], ACTIVATION_LOCK_LAYER, code);
+                        activation->data.lock_layer.layer_index = layer_index;
+                        activation->data.lock_layer.is_overlay = action->data.lock_layer.is_overlay;
+                    }
+                    else
+                    {
+                        // No locked non-overlay lock-layer activations, convert to a latch activation
+                        activate_layer(device, layers[action->data.lock_layer.layer_index], ACTIVATION_LATCH_LAYER, code);
+                    }
+                }
+            }
+            else if (IS_RELEASE(value))
+            {
+                struct activation* activation = find_activation_by_code(device, code);
+                if (activation != NULL)
+                {
+                    if (activation->kind == ACTIVATION_SHIFT_LAYER)
+                    {
+                        // Lock-layer key was released as a shift activation
+                        deactivate_layer(device, activation);
+                    }
+                    else
+                    {
+                        if (!action->data.lock_layer.is_overlay)
+                        {
+                            // Unlock all locked layers that are not layouts, unless locking a layout, then unlock all locked layers
+                            int unlock_all = layers[action->data.lock_layer.layer_index]->is_layout;
+                            for (struct activation* a = device->top_activation; a != NULL;)
+                            {
+                                struct activation* prev = a->prev;
+                                // Skip activation for this lock-layer key
+                                if (a != activation && a->kind == ACTIVATION_LOCK_LAYER && (unlock_all || !a->layer->is_layout))
+                                {
+                                    deactivate_layer(device, a);
+                                }
+                                a = prev;
+                            }
+                        }
+
+                        // The layer remains activated until unlocked
+                        activation->action = action;
+                        activation->code = 0;
+                    }
+                }
+                // else lock-layer key was released a second time, and was unlocked on press
+            }
+            break;
+        }
+        case ACTION_UNLOCK:
+        {
+            // Ignore press and repeat events
+            if (IS_RELEASE(value))
+            {
+                if (action->data.unlock.all)
+                {
+                    // Unlock all locked layers, including layouts
+                    for (struct activation* a = device->top_activation; a != NULL;)
+                    {
+                        struct activation* prev = a->prev;
+                        // This is safe even if the key used to activate layer is still pressed
+                        // Overload key and its delayed key will not be sent
+                        deactivate_layer(device, a);
+                        a = prev;
+                    }
+                }
+                else
+                {
+                    // Find lock-layer activation with same layer as this unlock action
+                    struct activation* activation = FIND_ACTIVATION(device,
+                        activation->kind == ACTIVATION_LOCK_LAYER && activation->data.lock_layer.layer_index == layer->index);
+                    if (activation != NULL)
+                    {
+                        if(!activation->data.lock_layer.is_overlay) deactivate_overlays(device, activation);
+                        deactivate_layer(device, activation);
+                    }
+                }
+            }
+            break;
+        }
     }
 
     device->pressed[code] = (IS_RELEASE(value) ? 0 : LAYER_TO_PRESSED(layer));
@@ -349,6 +468,17 @@ void processKey(struct input_device* device, int type, int code, int value)
                 }
 
                 process_action(device, layer, code, value);
+                break;
+            }
+            case ACTIVATION_LOCK_LAYER:
+            {
+                if (IS_PRESS(value) && activation->action == NULL)
+                {
+                    // A key was pressed before releasing lock-layer key, convert to a shift activation
+                    activation->kind = ACTIVATION_SHIFT_LAYER;
+                }
+
+                process_action(device, find_key_layer(device, code, value), code, value);
                 break;
             }
         }

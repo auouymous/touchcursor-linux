@@ -338,6 +338,57 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
                 setLayerActionLatch(layer, fromCode, NULL, lineno, to_layer_path);
                 return;
             }
+            if (strcmp(action, "lock") == 0)
+            {
+                // (lock to_layer)
+                char* to_layer_path = next_argument(&tokens);
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                setLayerActionLock(layer, fromCode, NULL, lineno, to_layer_path, 0);
+                return;
+            }
+            if (strcmp(action, "lock-overlay") == 0)
+            {
+                // (lock-overlay to_layer)
+                char* to_layer_path = next_argument(&tokens);
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                setLayerActionLock(layer, fromCode, NULL, lineno, to_layer_path, 1);
+                return;
+            }
+            if (strcmp(action, "unlock") == 0)
+            {
+                // (unlock [*])
+                char* all_str = next_argument(&tokens);
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                uint8_t all = 0;
+                if (all_str[0] != '\0')
+                {
+                    // Parse optional '*' to unlock all activations
+                    if (strcmp(all_str, "*"))
+                    {
+                        error("error[%d]: expected no arguments or '*': %s\n", lineno, tokens);
+                        return;
+                    }
+                    all = 1;
+                }
+
+                setLayerActionUnlock(layer, fromCode, all);
+                return;
+            }
         }
 
         error("error[%d]: invalid action: %s\n", lineno, action);
@@ -422,6 +473,23 @@ static void parse_command(char* line, int lineno, struct layer* user_layer)
                 return;
             }
             input_devices[user_layer->device_index].inherit_remap = 1;
+            return;
+        }
+        if (strcmp(command, "is-layout") == 0)
+        {
+            // (is-layout)
+            if (tokens)
+            {
+                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                return;
+            }
+
+            if (user_layer->device_index != 0xFF)
+            {
+                error("error[%d]: is-layout command is not valid in a device layer\n", lineno);
+                return;
+            }
+            user_layer->is_layout = 1;
             return;
         }
     }
@@ -922,6 +990,32 @@ void setLayerActionLatch(struct layer* layer, int key, struct layer* to_layer, i
 }
 
 /**
+ * Set lock-layer key in layer.
+ */
+void setLayerActionLock(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint8_t is_overlay)
+{
+    layer->keymap[key].kind = ACTION_LOCK_LAYER;
+    layer->keymap[key].data.lock_layer.is_overlay = is_overlay;
+    if (to_layer)
+    {
+        layer->keymap[key].data.lock_layer.layer_index = to_layer->index;
+    }
+    else
+    {
+        add_layer_path_reference(lineno, layer, to_layer_path, &layer->keymap[key].data.lock_layer.layer_index);
+    }
+}
+
+/**
+ * Set unlock key in layer.
+ */
+void setLayerActionUnlock(struct layer* layer, int key, uint8_t all)
+{
+    layer->keymap[key].kind = ACTION_UNLOCK;
+    layer->keymap[key].data.unlock.all = all;
+}
+
+/**
  * Register a layer.
  */
 struct layer* registerLayer(int lineno, struct layer* parent_layer, char* name)
@@ -946,6 +1040,7 @@ struct layer* registerLayer(int lineno, struct layer* parent_layer, char* name)
     struct layer* layer = malloc(sizeof(struct layer));
     layer->index = nr_layers;
     layer->device_index = 0xFF; // No device
+    layer->is_layout = 0;
     if (parent_layer)
     {
         char fullpath[2 * MAX_LAYER_NAME];
