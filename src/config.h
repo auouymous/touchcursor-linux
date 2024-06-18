@@ -10,6 +10,7 @@
 #define MAX_KEYMAP_CODE 255
 #define MAX_KEYMAP (MAX_KEYMAP_CODE + 1)
 #define MAX_SEQUENCE 5
+#define MAX_SEQUENCE_OVERLOAD_MOD (MAX_SEQUENCE - 2)
 
 /**
  * The configuration file path.
@@ -30,6 +31,7 @@ enum action_kind
     ACTION_DISABLED,        // do nothing
     ACTION_KEY,             // emit a single key code
     ACTION_KEYS,            // emit multiple key codes
+    ACTION_OVERLOAD_MOD,    // press keys on hold, or emit a single key code on tap
     ACTION_OVERLOAD_LAYER,  // activate layer on hold, or emit a single key code on tap
     ACTION_SHIFT_LAYER,     // activate layer on hold
     ACTION_LATCH_LAYER,     // activate layer on hold, or activate layer for a single key press after released
@@ -46,6 +48,10 @@ struct action
         struct {
             uint16_t codes[MAX_SEQUENCE];
         } keys;
+        struct {
+            uint16_t codes[MAX_SEQUENCE_OVERLOAD_MOD];
+            uint16_t code;
+        } overload_mod;
         struct {
             uint8_t layer_index;
             uint16_t code;
@@ -79,12 +85,14 @@ struct layer
     struct action keymap[MAX_KEYMAP];
 };
 extern struct layer* layers[MAX_LAYERS];
+extern struct layer* transparent_layer;
 
 /**
  * Layer activation.
  * */
 enum activation_kind
 {
+    ACTIVATION_OVERLOAD_MOD,
     ACTIVATION_OVERLOAD_LAYER,
     ACTIVATION_SHIFT_LAYER,
     ACTIVATION_LATCH_LAYER,
@@ -99,6 +107,10 @@ struct activation
     enum activation_kind kind;
     uint8_t code; // key code that activated the layer
     union {
+        struct {
+            uint8_t active; // after second event
+            uint16_t delayed_code; // delay first key press
+        } overload_mod;
         struct {
             uint8_t active; // after second event
             uint16_t delayed_code; // delay first key press
@@ -162,6 +174,11 @@ void setLayerActionDisabled(struct layer* layer, int key);
  * Set key or key sequence in layer.
  */
 void setLayerKey(struct layer* layer, int key, unsigned int length, uint16_t* sequence);
+
+/**
+ * Set overload-mod key in layer.
+ */
+void setLayerActionOverloadMod(struct layer* layer, int key, int lineno, unsigned int length, uint16_t* sequence, uint16_t to_code);
 
 /**
  * Set overload-layer key in layer.

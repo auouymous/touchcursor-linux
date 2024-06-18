@@ -18,6 +18,7 @@ int automatic_reload;
 
 struct layer* layers[MAX_LAYERS];
 static int nr_layers = 0;
+struct layer* transparent_layer;
 
 struct input_device input_devices[MAX_DEVICES];
 int nr_input_devices;
@@ -214,6 +215,36 @@ static void parse_remap(char* line, int lineno, int* remap)
 }
 
 /**
+ * Parse a sequence of key codes.
+ * */
+static int parse_key_code_sequence(int lineno, char* tokens, unsigned int max, uint16_t* sequence)
+{
+    char* token;
+    unsigned int index = 0;
+    while ((token = strsep(&tokens, ",")) != NULL)
+    {
+        if (index >= max)
+        {
+            error("error[%d]: exceeded limit of %d keys in sequence: %s\n", lineno, max, token);
+            return 0;
+        }
+        int toCode = convertKeyStringToCode(token);
+        if (toCode == 0)
+        {
+            error("error[%d]: invalid key: expected a single key or comma separated list of keys: %s\n", lineno, token);
+            return 0;
+        }
+        sequence[index++] = toCode;
+    }
+    if (index == 0)
+    {
+        error("error[%d]: expected a single key or comma separated list of keys\n", lineno);
+        return 0;
+    }
+    return index;
+}
+
+/**
  * Parse space separated tokens in a line.
  * */
 static char* next_argument(char** tokens)
@@ -283,6 +314,7 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
             if (strcmp(action, "overload") == 0)
             {
                 // (overload to_layer [tap=to_code])
+                // (overload to_codes [tap=to_code])
                 char* to_layer_path = next_argument(&tokens);
                 char* to_code_name = "";
                 while (tokens)
@@ -309,7 +341,17 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
                     }
                 }
 
-                setLayerActionOverload(layer, fromCode, NULL, lineno, to_layer_path, to_code);
+                if (strstr(to_layer_path, ",") != NULL || convertKeyStringToCode(to_layer_path) != 0)
+                {
+                    uint16_t sequence[MAX_SEQUENCE_OVERLOAD_MOD];
+                    unsigned int index = parse_key_code_sequence(lineno, to_layer_path, MAX_SEQUENCE_OVERLOAD_MOD, sequence);
+                    if (index == 0) return;
+                    setLayerActionOverloadMod(layer, fromCode, lineno, index, sequence, to_code);
+                }
+                else
+                {
+                    setLayerActionOverload(layer, fromCode, NULL, lineno, to_layer_path, to_code);
+                }
                 return;
             }
             if (strcmp(action, "shift") == 0)
@@ -396,27 +438,8 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
     }
 
     uint16_t sequence[MAX_SEQUENCE];
-    unsigned int index = 0;
-    while ((token = strsep(&tokens, ",")) != NULL)
-    {
-        if (index >= MAX_SEQUENCE)
-        {
-            error("error[%d]: exceeded limit of %d keys in sequence: %s\n", lineno, MAX_SEQUENCE, token);
-            return;
-        }
-        int toCode = convertKeyStringToCode(token);
-        if (toCode == 0)
-        {
-            error("error[%d]: invalid key: expected a single key or comma separated list of keys: %s\n", lineno, token);
-            return;
-        }
-        sequence[index++] = toCode;
-    }
-    if (index == 0)
-    {
-        error("error[%d]: expected a single key or comma separated list of keys\n", lineno);
-        return;
-    }
+    unsigned int index = parse_key_code_sequence(lineno, tokens, MAX_SEQUENCE, sequence);
+    if (index == 0) return;
     setLayerKey(layer, fromCode, index, sequence);
 }
 
@@ -519,6 +542,7 @@ int read_configuration()
     for (int i = 0; i < nr_layers; i++) free(layers[i]);
     memset(layers, 0, sizeof(layers));
     nr_layers = 0;
+    transparent_layer = NULL;
 
     // This layer is only for compatbility with existing configurations
     struct layer* hyper_layer = NULL;
@@ -938,6 +962,28 @@ void setLayerKey(struct layer* layer, int key, unsigned int length, uint16_t* se
             break;
         }
     }
+}
+
+/**
+ * Set overload-mod key in layer.
+ */
+void setLayerActionOverloadMod(struct layer* layer, int key, int lineno, unsigned int length, uint16_t* sequence, uint16_t to_code)
+{
+    if (transparent_layer == NULL)
+    {
+        transparent_layer = registerLayer(lineno, NULL, "Transparent");
+    }
+
+    layer->keymap[key].kind = ACTION_OVERLOAD_MOD;
+    for (int i = 0; i < length; i++)
+    {
+        layer->keymap[key].data.overload_mod.codes[i] = sequence[i];
+    }
+    for (int i = length; i < MAX_SEQUENCE_OVERLOAD_MOD; i++)
+    {
+        layer->keymap[key].data.overload_mod.codes[i] = 0;
+    }
+    layer->keymap[key].data.overload_mod.code = to_code;
 }
 
 /**

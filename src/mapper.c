@@ -104,7 +104,34 @@ static struct layer* find_key_layer(struct input_device* device, int code, int v
     return device->layer;
 }
 
+/**
+ * Emit a sequence of keys.
+ * */
+static void emit_key_sequence(unsigned int max, uint16_t* sequence, int value)
+{
+    for (int i = 0; i < max; i++)
+    {
+        if (sequence[i] == 0)
+        {
+            break;
+        }
+        emit(EV_KEY, sequence[i], value);
+    }
+}
+
 static void process_action(struct input_device* device, struct layer* layer, int code, int value);
+
+/**
+ * Activate an overload-mod activation.
+ * */
+static void activate_overload_mod(struct input_device* device, struct activation* activation, int delayed_code)
+{
+    activation->data.overload_mod.active = 1;
+    // Send overload-mod press sequence
+    emit_key_sequence(MAX_SEQUENCE_OVERLOAD_MOD, activation->action->data.overload_mod.codes, 1);
+    // Send press event for delayed key code
+    process_action(device, find_key_layer(device, delayed_code, 1), delayed_code, 1);
+}
 
 /**
  * Activate an overload activation.
@@ -152,13 +179,39 @@ static void process_action(struct input_device* device, struct layer* layer, int
         }
         case ACTION_KEYS:
         {
-            for (int i = 0; i < MAX_SEQUENCE; i++)
+            emit_key_sequence(MAX_SEQUENCE, action->data.keys.codes, value);
+            break;
+        }
+        case ACTION_OVERLOAD_MOD:
+        {
+            // Ignore repeat events
+            if (IS_PRESS(value))
             {
-                if (action->data.keys.codes[i] == 0)
+                struct activation* activation = activate_layer(device, transparent_layer, ACTIVATION_OVERLOAD_MOD, code);
+                activation->action = action;
+            }
+            else if (IS_RELEASE(value))
+            {
+                struct activation* activation = find_activation_by_code(device, code);
+                if (activation != NULL)
                 {
-                    break;
+                    if (!activation->data.overload_mod.active)
+                    {
+                        // Send overload-mod key and delayed key code, if one
+                        emit(EV_KEY, action->data.overload_mod.code, 1);
+                        if (activation->data.overload_mod.delayed_code)
+                        {
+                            emit(EV_KEY, activation->data.overload_mod.delayed_code, 1);
+                        }
+                        emit(EV_KEY, action->data.overload_mod.code, 0);
+                    }
+                    else
+                    {
+                        // Send overload-mod release sequence
+                        emit_key_sequence(MAX_SEQUENCE_OVERLOAD_MOD, action->data.overload_mod.codes, 0);
+                    }
+                    deactivate_layer(device, activation);
                 }
-                emit(EV_KEY, action->data.keys.codes[i], value);
             }
             break;
         }
@@ -388,6 +441,54 @@ void processKey(struct input_device* device, int type, int code, int value)
         struct activation* activation = device->top_activation;
         switch (activation->kind)
         {
+            case ACTIVATION_OVERLOAD_MOD:
+            {
+                // The overload-mod key is down and event key is not the overload-mod key
+                if (IS_PRESS(value))
+                {
+                    // Key press
+                    if (!activation->data.overload_mod.active)
+                    {
+                        int delayed_code = activation->data.overload_mod.delayed_code;
+                        if (delayed_code == 0)
+                        {
+                            // Delay first key press after pressing the overload-mod key
+                            activation->data.overload_mod.delayed_code = code;
+                            return;
+                        }
+
+                        // A second key press activates the overload-mod layer
+                        activate_overload_mod(device, activation, delayed_code);
+                    }
+                }
+                else
+                {
+                    // Key repeat or release
+                    int delayed_code = activation->data.overload_mod.delayed_code;
+                    if (code != delayed_code)
+                    {
+                        // A key that was pressed before the overload-mod key was pressed
+                        if (device->pressed[code])
+                        {
+                            process_action(device, PRESSED_TO_LAYER(device, code), code, value);
+                        }
+                        else
+                        {
+                            // Key was held down while starting the service, send its unprocessed code
+                            emit(EV_KEY, code, value);
+                        }
+                        return;
+                    }
+                    if (!activation->data.overload_mod.active)
+                    {
+                        // Delayed key was repeated or released, activate the overload-mod layer
+                        activate_overload_mod(device, activation, delayed_code);
+                    }
+                }
+
+                process_action(device, find_key_layer(device, code, value), code, value);
+                break;
+            }
             case ACTIVATION_OVERLOAD_LAYER:
             {
                 // The overload-layer key is down and event key is not the overload-layer key

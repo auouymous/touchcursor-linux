@@ -57,6 +57,7 @@ static struct test_keys test_keys[] = {
     {KEY_E, "mr2"}, {KEY_K, "mr2_to"}, {KEY_5, "layer_mr2"}, // mapped remap
 
     {KEY_D, "disabled"},
+    {KEY_M, "overload-mod"}, {KEY_LEFTSHIFT, "overload-mod-seq"},
     {KEY_SPACE, "overload"},
     {KEY_COMMA, "shift"},
     {KEY_DOT, "latch"},
@@ -251,6 +252,10 @@ static void testNormalTyping()
     // Nothing should be output
     TYPE("overload down, disabled tap, overload up", EXPECT, "");
 
+    TYPE("overload-mod tap, other tap", EXPECT, "overload-mod tap, other tap");
+
+    TYPE("overload-mod down, other tap, overload-mod up", EXPECT, "overload-mod-seq down, other tap, overload-mod-seq up");
+
     TYPE("shift tap, other tap", EXPECT, "other tap");
 
     TYPE("shift down, m1 tap, shift up", EXPECT, "layer_m1 tap");
@@ -319,6 +324,8 @@ static void testFastTyping()
     TYPE("overload down, m1 down, m2 down, m3 down, overload up, m1 up, m2 up, m3 up",
         EXPECT, "layer_m1 down, layer_m2 down, layer_m3 down, layer_m1 up, layer_m2 up, layer_m3 up");
 
+    TYPE("overload-mod down, other down, overload-mod up, other up", EXPECT, "overload-mod down, other down, overload-mod up, other up");
+
     TYPE("shift down, m1 down, shift up, m1 up", EXPECT, "layer_m1 tap");
 
     // Mapped key from latched layer is output along with its default code
@@ -371,6 +378,7 @@ int main()
     sequence[0] = KEY("layer_mr2"); setLayerKey(test_layer, KEY("mr2"), 1, sequence);
 
     setLayerActionDisabled(test_layer, KEY("disabled"));
+    sequence[0] = KEY("leftshift"); setLayerActionOverloadMod(test_device->layer, KEY("overload-mod"), 0, 1, sequence, KEY("overload-mod"));
     setLayerActionOverload(test_device->layer, KEY("overload"), test_layer, 0, NULL, KEY("overload"));
     setLayerActionShift(test_device->layer, KEY("shift"), test_layer, 0, NULL);
     setLayerActionLatch(test_device->layer, KEY("latch"), test_layer, 0, NULL);
