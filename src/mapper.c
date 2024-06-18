@@ -12,6 +12,7 @@
 #include "keys.h"
 #include "leds.h"
 #include "mapper.h"
+#include "pointer.h"
 
 #define PRESSED_TO_LAYER(device, code) layers[device->pressed[code] - 1]
 #define LAYER_TO_PRESSED(layer) (layer->index + 1)
@@ -19,6 +20,12 @@
 #define MAX_POOL_ACTIVATIONS 8
 static struct activation* activation_pool[MAX_POOL_ACTIVATIONS];
 static int nr_pool_activations = 0;
+
+// Multi-axis pointer keys
+static struct action* pointer_x_action = NULL;
+static struct action* pointer_y_action = NULL;
+// Pointer acceleration
+static float pointer_accel = 1.0;
 
 /**
  * Toggle layer leds.
@@ -600,6 +607,47 @@ static void process_action(struct input_device* device, struct layer* layer, int
             }
             break;
         }
+        case ACTION_POINTER_MOVE:
+        {
+            if (value != 0)
+            {
+                int16_t x = action->data.pointer_move.x;
+                int16_t y = action->data.pointer_move.y;
+                if (value == 1)
+                {
+                    // Press
+                    if (pointer_x_action == NULL && pointer_y_action == NULL) pointer_accel = 1;
+
+                    if (x) pointer_x_action = action; else if (pointer_x_action) x = pointer_x_action->data.pointer_move.x;
+                    if (y) pointer_y_action = action; else if (pointer_y_action) y = pointer_y_action->data.pointer_move.y;
+                }
+                else
+                {
+                    // Repeat
+                    pointer_accel *= pointer_accel_rate;
+                    if (pointer_accel > pointer_accel_max) pointer_accel = pointer_accel_max;
+
+                    if (pointer_x_action) x = pointer_x_action->data.pointer_move.x;
+                    if (pointer_y_action) y = pointer_y_action->data.pointer_move.y;
+                }
+
+                pointer_move(x * pointer_accel, y * pointer_accel);
+            }
+            else
+            {
+                if (pointer_x_action == action) pointer_x_action = NULL;
+                if (pointer_y_action == action) pointer_y_action = NULL;
+            }
+            break;
+        }
+        case ACTION_POINTER_SCROLL:
+        {
+            if (value != 0)
+            {
+                pointer_scroll(action->data.pointer_scroll.x, action->data.pointer_scroll.y);
+            }
+            break;
+        }
         case ACTION_UKEYS_STR:
         {
             if (value != 0)
@@ -1093,6 +1141,10 @@ static void process_action(struct input_device* device, struct layer* layer, int
                             emit(EV_KEY, modifier_key_list[i], 0);
                         }
                     }
+
+                    // Clear multi-axis pointer keys
+                    pointer_x_action = NULL;
+                    pointer_y_action = NULL;
                 }
                 else
                 {

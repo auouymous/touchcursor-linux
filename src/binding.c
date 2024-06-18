@@ -281,6 +281,23 @@ int bind_output()
             return EXIT_FAILURE;
         }
     }
+    // Enable relative pointer events
+    if (ioctl(output_file_descriptor, UI_SET_EVBIT, EV_REL) < 0)
+    {
+        error("error: failed to set EV_REL on output (UI_SET_EVBIT, EV_REL: %s)\n", strerror(errno));
+        return EXIT_FAILURE;
+    }
+    // Enable the set of relative pointer events
+    int rel_events[4] = {REL_X, REL_Y, REL_WHEEL, REL_HWHEEL};
+    for (int i = 0; i < 4; i++)
+    {
+        int result = ioctl(output_file_descriptor, UI_SET_RELBIT, rel_events[i]);
+        if (result < 0)
+        {
+            error("error: failed to set relative bit (UI_SET_RELBIT, %i: %s)\n", rel_events[i], strerror(errno));
+            return EXIT_FAILURE;
+        }
+    }
     // Set up the device
     if (ioctl(output_file_descriptor, UI_DEV_SETUP, &virtual_keyboard) < 0)
     {

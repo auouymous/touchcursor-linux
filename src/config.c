@@ -30,6 +30,9 @@ uint8_t** codepoint_strings;
 int nr_codepoint_strings = 0;
 int max_codepoint_strings;
 
+float pointer_accel_rate;
+float pointer_accel_max;
+
 struct layer* layers[MAX_LAYERS];
 static int nr_layers = 0;
 struct layer* transparent_layer;
@@ -329,6 +332,36 @@ static int parse_integer(int* value, char* string, int min, int max, char* name,
 }
 
 /**
+ * Check if argument is a float.
+ * */
+static int is_float(char* token)
+{
+    if (*token == '-') token++;
+    while (*token >= '0' && *token <= '9') token++;
+    if (*token == '.')
+    {
+        token++;
+        while (*token >= '0' && *token <= '9') token++;
+    }
+    return (*token == '\0');
+}
+
+/**
+ * Parse float.
+ * */
+static int parse_float(float* value, char* string, float min, float max, char* name, int lineno)
+{
+    *value = 0;
+    sscanf(string, "%f", value);
+    if (!is_float(string) || *value < min || *value > max)
+    {
+        error("error[%d]: invalid %s: expected %f to %f: %s\n", lineno, name, min, max, string);
+        return 0;
+    }
+    return 1;
+}
+
+/**
  * Parse a line in a binding section.
  * */
 static void parse_binding(char* line, int lineno, struct layer* layer)
@@ -371,6 +404,44 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
                 }
 
                 setLayerActionDisabled(layer, fromCode);
+                return;
+            }
+            if (strcmp(action, "pointer-move") == 0)
+            {
+                // (pointer-move x y)
+                char* x_str = next_argument(&tokens);
+                char* y_str = next_argument(&tokens);
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                int x;
+                if (!parse_integer(&x, x_str, -32768, 32767, "x", lineno)) return;
+                int y;
+                if (!parse_integer(&y, y_str, -32768, 32767, "y", lineno)) return;
+
+                setLayerPointerMove(layer, fromCode, x, y);
+                return;
+            }
+            if (strcmp(action, "pointer-scroll") == 0)
+            {
+                // (pointer-scroll x y)
+                char* x_str = next_argument(&tokens);
+                char* y_str = next_argument(&tokens);
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                int x;
+                if (!parse_integer(&x, x_str, -32768, 32767, "x", lineno)) return;
+                int y;
+                if (!parse_integer(&y, y_str, -32768, 32767, "y", lineno)) return;
+
+                setLayerPointerScroll(layer, fromCode, x, y);
                 return;
             }
             if (strcmp(action, "overload") == 0)
@@ -1001,6 +1072,9 @@ int read_configuration()
     nr_codepoint_strings = 0;
     max_codepoint_strings = 0;
 
+    pointer_accel_rate = 1.05;
+    pointer_accel_max = 4.0;
+
     // Reset the input devices
     nr_input_devices = 0;
 
@@ -1315,6 +1389,38 @@ int read_configuration()
                             // This setting overrides the (default-layer-leds) setting
                             memset(transparent_layer->leds, 0, sizeof(transparent_layer->leds));
                             parse_leds(transparent_layer->leds, tokens, lineno);
+                            continue;
+                        }
+                        if (strcmp(setting, "pointer-accel-rate") == 0)
+                        {
+                            // (pointer-accel-rate float)
+                            char* rate_str = next_argument(&tokens);
+                            if (tokens)
+                            {
+                                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                                continue;
+                            }
+
+                            float rate;
+                            if (!parse_float(&rate, rate_str, 1, 1000, "rate", lineno)) continue;
+
+                            pointer_accel_rate = rate;
+                            continue;
+                        }
+                        if (strcmp(setting, "pointer-accel-max") == 0)
+                        {
+                            // (pointer-accel-max float)
+                            char* max_str = next_argument(&tokens);
+                            if (tokens)
+                            {
+                                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                                continue;
+                            }
+
+                            float max;
+                            if (!parse_float(&max, max_str, 1, 1000, "max", lineno)) continue;
+
+                            pointer_accel_max = max;
                             continue;
                         }
                     }
@@ -1756,6 +1862,26 @@ void setLayerUKey(struct layer* layer, int key, unsigned int length, uint8_t* se
             break;
         }
     }
+}
+
+/**
+ * Set pointer move in layer.
+ */
+void setLayerPointerMove(struct layer* layer, int key, int16_t x, int16_t y)
+{
+    layer->keymap[key].kind = ACTION_POINTER_MOVE;
+    layer->keymap[key].data.pointer_move.x = x;
+    layer->keymap[key].data.pointer_move.y = y;
+}
+
+/**
+ * Set pointer scroll in layer.
+ */
+void setLayerPointerScroll(struct layer* layer, int key, int16_t x, int16_t y)
+{
+    layer->keymap[key].kind = ACTION_POINTER_SCROLL;
+    layer->keymap[key].data.pointer_scroll.x = x;
+    layer->keymap[key].data.pointer_scroll.y = y;
 }
 
 /**
