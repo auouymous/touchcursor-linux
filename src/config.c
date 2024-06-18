@@ -19,7 +19,7 @@ struct input_device input_devices[MAX_DEVICES];
 int nr_input_devices;
 
 int hyperKey;
-struct key_output hyper_keymap[MAX_KEYMAP];
+struct action hyper_keymap[MAX_KEYMAP];
 
 /**
  * Checks for the device number if it is configured.
@@ -250,7 +250,8 @@ int read_configuration()
                     error("error[%d]: left key code must be less than %d: %s\n", lineno, MAX_KEYMAP, token);
                     continue;
                 }
-                int index = 0;
+                uint16_t sequence[MAX_SEQUENCE];
+                unsigned int index = 0;
                 while ((token = strsep(&tokens, ",")) != NULL)
                 {
                     if (index >= MAX_SEQUENCE)
@@ -264,8 +265,14 @@ int read_configuration()
                         error("error[%d]: invalid key: expected a single key or comma separated list of keys: %s\n", lineno, token);
                         continue;
                     }
-                    hyper_keymap[fromCode].sequence[index++] = toCode;
+                    sequence[index++] = toCode;
                 }
+                if (index == 0)
+                {
+                    error("error[%d]: expected a single key or comma separated list of keys\n", lineno);
+                    continue;
+                }
+                setLayerKey(fromCode, index, sequence);
                 break;
             }
             case configuration_invalid:
@@ -333,9 +340,10 @@ void finalizeInputDevice(struct input_device* device, int* remap)
     // Initialize all unset bindings
     for (int k = 0; k < MAX_KEYMAP; k++)
     {
-        if (device->keymap[k].sequence[0] == 0)
+        if (device->keymap[k].kind == ACTION_TRANSPARENT)
         {
-            device->keymap[k].sequence[0] = k;
+            device->keymap[k].kind = ACTION_KEY;
+            device->keymap[k].data.key.code = k;
         }
     }
 
@@ -366,24 +374,52 @@ void remapBindings(int* remap)
     // This allows bindings in layers to be specified using the remapped keys.
     // While existing [Bindings] continue to work with the unremapped keys.
 
-    struct key_output keymap[MAX_KEYMAP];
+    struct action keymap[MAX_KEYMAP];
     memset(keymap, 0, sizeof(keymap));
 
     // Remap bindings
     for (int b = 0; b < MAX_KEYMAP; b++)
     {
-        int rb = remap[b] != 0 ? remap[b] : b;
-        for (int s = 0; s < MAX_SEQUENCE; s++)
+        if (hyper_keymap[b].kind != ACTION_TRANSPARENT)
         {
-            int c = hyper_keymap[b].sequence[s];
-            if (c == 0) break;
-            keymap[rb].sequence[s] = c;
+            int rb = remap[b] != 0 ? remap[b] : b;
+            keymap[rb] = hyper_keymap[b];
         }
     }
 
     for (int b = 0; b < MAX_KEYMAP; b++)
     {
         hyper_keymap[b] = keymap[b];
+    }
+}
+
+/**
+ * Set key or key sequence in layer.
+ */
+void setLayerKey(int key, unsigned int length, uint16_t* sequence)
+{
+    switch (length)
+    {
+        case 0: break;
+        case 1:
+        {
+            hyper_keymap[key].kind = ACTION_KEY;
+            hyper_keymap[key].data.key.code = sequence[0];
+            break;
+        }
+        default:
+        {
+            hyper_keymap[key].kind = ACTION_KEYS;
+            for (int i = 0; i < length; i++)
+            {
+                hyper_keymap[key].data.keys.codes[i] = sequence[i];
+            }
+            for (int i = length; i < MAX_SEQUENCE; i++)
+            {
+                hyper_keymap[key].data.keys.codes[i] = 0;
+            }
+            break;
+        }
     }
 }
 

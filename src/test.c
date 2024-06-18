@@ -290,22 +290,20 @@ int main()
 
     memset(hyper_keymap, 0, sizeof(hyper_keymap));
 
+    uint16_t sequence[4];
+
     // default config
     hyperKey = KEY("hyper");
-    hyper_keymap[KEY("m1")].sequence[0] = KEY("layer_m1");
-    hyper_keymap[KEY("m2")].sequence[0] = KEY("layer_m2");
-    hyper_keymap[KEY("m3")].sequence[0] = KEY("layer_m3");
+    sequence[0] = KEY("layer_m1"); setLayerKey(KEY("m1"), 1, sequence);
+    sequence[0] = KEY("layer_m2"); setLayerKey(KEY("m2"), 1, sequence);
+    sequence[0] = KEY("layer_m3"); setLayerKey(KEY("m3"), 1, sequence);
 
-    hyper_keymap[KEY("seq")].sequence[0] = KEY("seq1");
-    hyper_keymap[KEY("seq")].sequence[1] = KEY("seq2");
-    hyper_keymap[KEY("lseq")].sequence[0] = KEY("seq1");
-    hyper_keymap[KEY("lseq")].sequence[1] = KEY("seq2");
-    hyper_keymap[KEY("lseq")].sequence[2] = KEY("seq3");
-    hyper_keymap[KEY("lseq")].sequence[3] = KEY("seq4");
+    sequence[0] = KEY("seq1"); sequence[1] = KEY("seq2"); setLayerKey(KEY("seq"), 2, sequence);
+    sequence[0] = KEY("seq1"); sequence[1] = KEY("seq2"); sequence[2] = KEY("seq3"); sequence[3] = KEY("seq4"); setLayerKey(KEY("lseq"), 4, sequence);
 
     remap[KEY("or1")] = KEY("other");
     remap[KEY("mr2")] = KEY("m2");
-    hyper_keymap[KEY("mr2")].sequence[0] = KEY("layer_mr2");
+    sequence[0] = KEY("layer_mr2"); setLayerKey(KEY("mr2"), 1, sequence);
 
     finalizeInputDevice(test_device, remap);
 

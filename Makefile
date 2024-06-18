@@ -14,7 +14,7 @@ out_path = ./out
 binary = touchcursor
 # LIBS = -lm
 cc = gcc
-cflags = -Wall
+cflags = -Wall -fshort-enums
 ldflags = -pthread
 # All .h files
 headers = $(wildcard $(src_path)/*.h)

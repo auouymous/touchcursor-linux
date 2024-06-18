@@ -12,11 +12,11 @@ static int hyperDown = 0;
 static int hyperActive = 0;
 
 /**
- * Lookup a key sequence for an input device.
+ * Lookup a key action for an input device.
  */
-static struct key_output find_key_output(struct input_device* device, int code)
+static struct action find_key_action(struct input_device* device, int code)
 {
-    return hyper_keymap[code].sequence[0] != 0 ? hyper_keymap[code] : device->keymap[code];
+    return hyper_keymap[code].kind != ACTION_TRANSPARENT ? hyper_keymap[code] : device->keymap[code];
 }
 
 /**
@@ -24,15 +24,29 @@ static struct key_output find_key_output(struct input_device* device, int code)
  * */
 static void send_layer_key(struct input_device* device, int code, int value)
 {
-    struct key_output output = find_key_output(device, code);
-    for (int i = 0; i < MAX_SEQUENCE; i++)
+    struct action action = find_key_action(device, code);
+    switch (action.kind)
     {
-        if (output.sequence[i] == 0)
+        case ACTION_TRANSPARENT: break;
+        case ACTION_KEY:
         {
+            emit(EV_KEY, action.data.key.code, value);
             break;
         }
-        emit(EV_KEY, output.sequence[i], value);
+        case ACTION_KEYS:
+        {
+            for (int i = 0; i < MAX_SEQUENCE; i++)
+            {
+                if (action.data.keys.codes[i] == 0)
+                {
+                    break;
+                }
+                emit(EV_KEY, action.data.keys.codes[i], value);
+            }
+            break;
+        }
     }
+
     if (IS_RELEASE(value))
     {
         removeKeyFromQueue(code);
@@ -137,7 +151,7 @@ void processKey(struct input_device* device, int type, int code, int value)
         // Repeat or release hyper key
         process_hyper(device, code, value);
     }
-    else if (isModifier(code) && hyper_keymap[code].sequence[0] == 0)
+    else if (isModifier(code) && hyper_keymap[code].kind == ACTION_TRANSPARENT)
     {
         // Handle modifier here if not mapped, to avoid activating the hyper layer
         send_default_key(code, value);
