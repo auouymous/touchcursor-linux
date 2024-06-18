@@ -151,6 +151,7 @@ enum sections
     configuration_remap,
     configuration_hyper,
     configuration_bindings,
+    configuration_settings,
     configuration_layer,
     configuration_invalid
 };
@@ -656,10 +657,9 @@ int read_configuration()
                 section = configuration_bindings;
                 continue;
             }
-            if (strncmp(line, "[DisableAutomaticReload]", line_length) == 0)
+            if (strncmp(line, "[Settings]", line_length) == 0)
             {
-                section = configuration_none;
-                automatic_reload = 0;
+                section = configuration_settings;
                 continue;
             }
 
@@ -714,6 +714,38 @@ int read_configuration()
             case configuration_bindings:
             {
                 parse_binding(line, lineno, hyper_layer);
+                break;
+            }
+            case configuration_settings:
+            {
+                if (line[0] == '(')
+                {
+                    // Skip '('
+                    line++;
+
+                    char* tokens = line;
+                    size_t length = strlen(line);
+                    char* setting = tokens;
+                    if (tokens[length - 1] == ')')
+                    {
+                        tokens[length - 1] = '\0';
+                        setting = strsep(&tokens, " ");
+                        if (strcmp(setting, "disable-automatic-reload") == 0)
+                        {
+                            // (disable-automatic-reload)
+                            if (tokens)
+                            {
+                                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                                continue;
+                            }
+
+                            automatic_reload = 0;
+                            continue;
+                        }
+                    }
+                }
+
+                error("error[%d]: invalid setting: %s\n", lineno, line);
                 break;
             }
             case configuration_layer:
