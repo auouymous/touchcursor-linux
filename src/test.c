@@ -58,7 +58,9 @@ static struct test_keys test_keys[] = {
 
     {KEY_D, "disabled"},
     {KEY_M, "overload-mod"}, {KEY_LEFTSHIFT, "overload-mod-seq"},
+    {KEY_N, "overload-mod-500ms"},
     {KEY_SPACE, "overload"},
+    {KEY_B, "overload-500ms"},
     {KEY_COMMA, "shift"},
     {KEY_DOT, "latch"},
     {KEY_SLASH, "lock"},
@@ -87,6 +89,8 @@ static int type(char* keys, char* expect)
     tests_run++;
     for (int i = 0; i < 256; i++) output[i] = 0;
 
+    struct timeval timestamp = {0, 0};
+
     char* _keys = malloc(strlen(keys) + 1);
     strcpy(_keys, keys);
     char* tokens = _keys;
@@ -104,6 +108,15 @@ static int type(char* keys, char* expect)
             return 1;
         }
 
+        if (strcmp(key, "wait") == 0)
+        {
+            int milliseconds = atoi(action);
+            struct timeval a = timestamp;
+            struct timeval b = {0, milliseconds * 1000};
+            timeradd(&a, &b, &timestamp);
+            continue;
+        }
+
         int code = lookup_key_code(key);
         if (code == 0)
         {
@@ -114,16 +127,20 @@ static int type(char* keys, char* expect)
 
         if (strcmp(action, "down") == 0)
         {
-            processKey(test_device, EV_KEY, code, 1);
+            processKey(test_device, EV_KEY, code, 1, timestamp);
+        }
+        else if (strcmp(action, "repeat") == 0)
+        {
+            processKey(test_device, EV_KEY, code, 2, timestamp);
         }
         else if (strcmp(action, "up") == 0)
         {
-            processKey(test_device, EV_KEY, code, 0);
+            processKey(test_device, EV_KEY, code, 0, timestamp);
         }
         else if (strcmp(action, "tap") == 0)
         {
-            processKey(test_device, EV_KEY, code, 1);
-            processKey(test_device, EV_KEY, code, 0);
+            processKey(test_device, EV_KEY, code, 1, timestamp);
+            processKey(test_device, EV_KEY, code, 0, timestamp);
         }
         else
         {
@@ -167,6 +184,10 @@ static int type(char* keys, char* expect)
         if (strcmp(action, "down") == 0)
         {
             sprintf(eo, "%d:1 ", code);
+        }
+        else if (strcmp(action, "repeat") == 0)
+        {
+            sprintf(eo, "%d:2 ", code);
         }
         else if (strcmp(action, "up") == 0)
         {
@@ -300,6 +321,25 @@ static void testNormalTyping()
 
     // Mapped key from locked-overlay layer is output twice along with its default code
     TYPE("lock tap, lock-overlay down, m1 tap, m1 tap, lock-overlay up, lock tap, m1 tap", EXPECT, "layer_m1 tap, layer_m1 tap, m1 tap");
+
+    TYPE("overload-mod down, wait 1000, overload-mod up", EXPECT, "overload-mod tap");
+    TYPE("overload-mod-500ms down, wait 250, overload-mod-500ms up", EXPECT, "overload-mod-500ms tap");
+    TYPE("overload-mod-500ms down, wait 1000, overload-mod-500ms up", EXPECT, "overload-mod-seq tap");
+    TYPE("overload-mod-500ms down, wait 250, overload-mod-500ms repeat, overload-mod-500ms up", EXPECT, "overload-mod-500ms tap");
+    TYPE("overload-mod-500ms down, wait 1000, overload-mod-500ms repeat, overload-mod-500ms up", EXPECT, "overload-mod-seq tap");
+    TYPE("overload-mod-500ms down, wait 250, other down, overload-mod-500ms up", EXPECT, "overload-mod-500ms down, other down, overload-mod-500ms up");
+    TYPE("overload-mod-500ms down, wait 1000, other down", EXPECT, "overload-mod-seq down, other down");
+        struct timeval timestamp = {2, 0};
+        processKey(test_device, EV_KEY, KEY("overload-mod-500ms"), 0, timestamp); // Deactivate to avoid memory leaks
+
+    TYPE("overload down, wait 1000, overload up", EXPECT, "overload tap");
+    TYPE("overload-500ms down, wait 250, overload-500ms up", EXPECT, "overload-500ms tap");
+    TYPE("overload-500ms down, wait 1000, overload-500ms up", EXPECT, "");
+    TYPE("overload-500ms down, wait 250, overload-500ms repeat, overload-500ms up", EXPECT, "overload-500ms tap");
+    TYPE("overload-500ms down, wait 1000, overload-500ms repeat, overload-500ms up", EXPECT, "");
+    TYPE("overload-500ms down, wait 250, other down, overload-500ms up", EXPECT, "overload-500ms down, other down, overload-500ms up");
+    TYPE("overload-500ms down, wait 1000, other down", EXPECT, "other down");
+        processKey(test_device, EV_KEY, KEY("overload-500ms"), 0, timestamp); // Deactivate to avoid memory leaks
 }
 
 /*
@@ -378,8 +418,10 @@ int main()
     sequence[0] = KEY("layer_mr2"); setLayerKey(test_layer, KEY("mr2"), 1, sequence);
 
     setLayerActionDisabled(test_layer, KEY("disabled"));
-    sequence[0] = KEY("leftshift"); setLayerActionOverloadMod(test_device->layer, KEY("overload-mod"), 0, 1, sequence, KEY("overload-mod"));
-    setLayerActionOverload(test_device->layer, KEY("overload"), test_layer, 0, NULL, KEY("overload"));
+    sequence[0] = KEY("leftshift"); setLayerActionOverloadMod(test_device->layer, KEY("overload-mod"), 0, 1, sequence, KEY("overload-mod"), 0);
+    sequence[0] = KEY("leftshift"); setLayerActionOverloadMod(test_device->layer, KEY("overload-mod-500ms"), 0, 1, sequence, KEY("overload-mod-500ms"), 500);
+    setLayerActionOverload(test_device->layer, KEY("overload"), test_layer, 0, NULL, KEY("overload"), 0);
+    setLayerActionOverload(test_device->layer, KEY("overload-500ms"), test_layer, 0, NULL, KEY("overload-500ms"), 500);
     setLayerActionShift(test_device->layer, KEY("shift"), test_layer, 0, NULL);
     setLayerActionLatch(test_device->layer, KEY("latch"), test_layer, 0, NULL);
     setLayerActionLock(test_device->layer, KEY("lock"), test_layer, 0, NULL, 0);

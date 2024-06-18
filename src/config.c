@@ -267,6 +267,30 @@ static int get_key_value_argument(char* token, char* key, char** value)
 }
 
 /**
+ * Check if argument is an integer.
+ * */
+static int is_integer(char* token)
+{
+    if (*token == '-') token++;
+    while (*token >= '0' && *token <= '9') token++;
+    return (*token == '\0');
+}
+
+/**
+ * Parse integer.
+ * */
+static int parse_integer(int* value, char* string, int min, int max, char* name, int lineno)
+{
+    *value = atoi(string);
+    if (!is_integer(string) || *value < min || *value > max)
+    {
+        error("error[%d]: invalid %s: expected %d to %d: %s\n", lineno, name, min, max, string);
+        return 0;
+    }
+    return 1;
+}
+
+/**
  * Parse a line in a binding section.
  * */
 static void parse_binding(char* line, int lineno, struct layer* layer)
@@ -313,14 +337,16 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
             }
             if (strcmp(action, "overload") == 0)
             {
-                // (overload to_layer [tap=to_code])
-                // (overload to_codes [tap=to_code])
+                // (overload to_layer [tap=to_code] [timeout=timeout_ms])
+                // (overload to_codes [tap=to_code] [timeout=timeout_ms])
                 char* to_layer_path = next_argument(&tokens);
                 char* to_code_name = "";
+                char* timeout_str = "";
                 while (tokens)
                 {
                     char* arg = next_argument(&tokens);
                     if (get_key_value_argument(arg, "tap", &to_code_name)) continue;
+                    if (get_key_value_argument(arg, "timeout", &timeout_str)) continue;
                     error("error[%d]: invalid argument: %s\n", lineno, arg);
                 }
                 if (tokens)
@@ -341,16 +367,23 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
                     }
                 }
 
+                int timeout_ms = 0;
+                if (timeout_str[0] != '\0')
+                {
+                    // Parse optional timeout
+                    if (!parse_integer(&timeout_ms, timeout_str, 0, 65535, "timeout", lineno)) return;
+                }
+
                 if (strstr(to_layer_path, ",") != NULL || convertKeyStringToCode(to_layer_path) != 0)
                 {
                     uint16_t sequence[MAX_SEQUENCE_OVERLOAD_MOD];
                     unsigned int index = parse_key_code_sequence(lineno, to_layer_path, MAX_SEQUENCE_OVERLOAD_MOD, sequence);
                     if (index == 0) return;
-                    setLayerActionOverloadMod(layer, fromCode, lineno, index, sequence, to_code);
+                    setLayerActionOverloadMod(layer, fromCode, lineno, index, sequence, to_code, timeout_ms);
                 }
                 else
                 {
-                    setLayerActionOverload(layer, fromCode, NULL, lineno, to_layer_path, to_code);
+                    setLayerActionOverload(layer, fromCode, NULL, lineno, to_layer_path, to_code, timeout_ms);
                 }
                 return;
             }
@@ -821,7 +854,7 @@ int read_configuration()
         {
             if (input_devices[d].layer->name[0] == 'D')
             {
-                setLayerActionOverload(input_devices[d].layer, hyperKey, hyper_layer, 0, NULL, hyperKey);
+                setLayerActionOverload(input_devices[d].layer, hyperKey, hyper_layer, 0, NULL, hyperKey, 0);
             }
         }
     }
@@ -967,7 +1000,7 @@ void setLayerKey(struct layer* layer, int key, unsigned int length, uint16_t* se
 /**
  * Set overload-mod key in layer.
  */
-void setLayerActionOverloadMod(struct layer* layer, int key, int lineno, unsigned int length, uint16_t* sequence, uint16_t to_code)
+void setLayerActionOverloadMod(struct layer* layer, int key, int lineno, unsigned int length, uint16_t* sequence, uint16_t to_code, uint16_t timeout_ms)
 {
     if (transparent_layer == NULL)
     {
@@ -984,12 +1017,13 @@ void setLayerActionOverloadMod(struct layer* layer, int key, int lineno, unsigne
         layer->keymap[key].data.overload_mod.codes[i] = 0;
     }
     layer->keymap[key].data.overload_mod.code = to_code;
+    layer->keymap[key].data.overload_mod.timeout_ms = timeout_ms;
 }
 
 /**
  * Set overload-layer key in layer.
  */
-void setLayerActionOverload(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint16_t to_code)
+void setLayerActionOverload(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint16_t to_code, uint16_t timeout_ms)
 {
     layer->keymap[key].kind = ACTION_OVERLOAD_LAYER;
     if (to_layer)
@@ -1001,6 +1035,7 @@ void setLayerActionOverload(struct layer* layer, int key, struct layer* to_layer
         add_layer_path_reference(lineno, layer, to_layer_path, &layer->keymap[key].data.overload_layer.layer_index);
     }
     layer->keymap[key].data.overload_layer.code = to_code;
+    layer->keymap[key].data.overload_layer.timeout_ms = timeout_ms;
 }
 
 /**

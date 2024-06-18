@@ -2,6 +2,7 @@
 #define config_h
 
 #include <stdint.h>
+#include <sys/time.h>
 
 #define MAX_DEVICES 4
 // Layer indices are uint8_t and some are offset by one to use zero as undefined
@@ -10,7 +11,7 @@
 #define MAX_KEYMAP_CODE 255
 #define MAX_KEYMAP (MAX_KEYMAP_CODE + 1)
 #define MAX_SEQUENCE 5
-#define MAX_SEQUENCE_OVERLOAD_MOD (MAX_SEQUENCE - 2)
+#define MAX_SEQUENCE_OVERLOAD_MOD (MAX_SEQUENCE - 3)
 
 /**
  * The configuration file path.
@@ -51,10 +52,12 @@ struct action
         struct {
             uint16_t codes[MAX_SEQUENCE_OVERLOAD_MOD];
             uint16_t code;
+            uint16_t timeout_ms; // milliseconds
         } overload_mod;
         struct {
             uint8_t layer_index;
             uint16_t code;
+            uint16_t timeout_ms; // milliseconds
         } overload_layer;
         struct {
             uint8_t layer_index;
@@ -110,10 +113,12 @@ struct activation
         struct {
             uint8_t active; // after second event
             uint16_t delayed_code; // delay first key press
+            struct timeval timeout_timestamp;
         } overload_mod;
         struct {
             uint8_t active; // after second event
             uint16_t delayed_code; // delay first key press
+            struct timeval timeout_timestamp;
         } overload_layer;
         struct {
             uint8_t layer_index;
@@ -178,12 +183,12 @@ void setLayerKey(struct layer* layer, int key, unsigned int length, uint16_t* se
 /**
  * Set overload-mod key in layer.
  */
-void setLayerActionOverloadMod(struct layer* layer, int key, int lineno, unsigned int length, uint16_t* sequence, uint16_t to_code);
+void setLayerActionOverloadMod(struct layer* layer, int key, int lineno, unsigned int length, uint16_t* sequence, uint16_t to_code, uint16_t timeout_ms);
 
 /**
  * Set overload-layer key in layer.
  */
-void setLayerActionOverload(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint16_t to_code);
+void setLayerActionOverload(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint16_t to_code, uint16_t timeout_ms);
 
 /**
  * Set shift-layer key in layer.

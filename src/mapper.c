@@ -134,28 +134,42 @@ static void emit_key_sequence(unsigned int max, uint16_t* sequence, int value)
     }
 }
 
-static void process_action(struct input_device* device, struct layer* layer, int code, int value);
+/**
+ * Check if timeout has expired.
+ * */
+static int timeout_has_expired(struct timeval timestamp, struct timeval activation_timeout_timestamp)
+{
+    return (timerisset(&activation_timeout_timestamp) && timercmp(&timestamp, &activation_timeout_timestamp, >));
+}
+
+static void process_action(struct input_device* device, struct layer* layer, int code, int value, struct timeval timestamp);
 
 /**
  * Activate an overload-mod activation.
  * */
-static void activate_overload_mod(struct input_device* device, struct activation* activation, int delayed_code)
+static void activate_overload_mod(struct input_device* device, struct activation* activation, int delayed_code, struct timeval timestamp)
 {
     activation->data.overload_mod.active = 1;
     // Send overload-mod press sequence
     emit_key_sequence(MAX_SEQUENCE_OVERLOAD_MOD, activation->action->data.overload_mod.codes, 1);
-    // Send press event for delayed key code
-    process_action(device, find_key_layer(device, delayed_code, 1), delayed_code, 1);
+    if (delayed_code)
+    {
+        // Send press event for delayed key code
+        process_action(device, find_key_layer(device, delayed_code, 1), delayed_code, 1, timestamp);
+    }
 }
 
 /**
  * Activate an overload activation.
  * */
-static void activate_overload(struct input_device* device, struct activation* activation, int delayed_code)
+static void activate_overload(struct input_device* device, struct activation* activation, int delayed_code, struct timeval timestamp)
 {
     activation->data.overload_layer.active = 1;
-    // Send press event for delayed key code
-    process_action(device, find_key_layer(device, delayed_code, 1), delayed_code, 1);
+    if (delayed_code)
+    {
+        // Send press event for delayed key code
+        process_action(device, find_key_layer(device, delayed_code, 1), delayed_code, 1, timestamp);
+    }
 }
 
 /**
@@ -175,7 +189,7 @@ struct activation* find_activation_by_code(struct input_device* device, int code
 /**
  * Process a key action.
  * */
-static void process_action(struct input_device* device, struct layer* layer, int code, int value)
+static void process_action(struct input_device* device, struct layer* layer, int code, int value, struct timeval timestamp)
 {
     struct action* action = &layer->keymap[code];
 
@@ -199,17 +213,33 @@ static void process_action(struct input_device* device, struct layer* layer, int
         }
         case ACTION_OVERLOAD_MOD:
         {
-            // Ignore repeat events
             if (IS_PRESS(value))
             {
                 struct activation* activation = activate_layer(device, transparent_layer, ACTIVATION_OVERLOAD_MOD, code);
                 activation->action = action;
+                int timeout_ms = action->data.overload_mod.timeout_ms;
+                if (timeout_ms > 0)
+                {
+                    struct timeval a = timestamp;
+                    struct timeval b = {0, timeout_ms * 1000};
+                    timeradd(&a, &b, &device->top_activation->data.overload_mod.timeout_timestamp);
+                }
+                else
+                {
+                    timerclear(&device->top_activation->data.overload_mod.timeout_timestamp);
+                }
             }
             else if (IS_RELEASE(value))
             {
                 struct activation* activation = find_activation_by_code(device, code);
                 if (activation != NULL)
                 {
+                    if (!activation->data.overload_mod.active && timeout_has_expired(timestamp, activation->data.overload_mod.timeout_timestamp))
+                    {
+                        // Action timed-out, activate on release
+                        activate_overload_mod(device, activation, activation->data.overload_mod.delayed_code, timestamp);
+                    }
+
                     if (!activation->data.overload_mod.active)
                     {
                         // Send overload-mod key and delayed key code, if one
@@ -228,20 +258,48 @@ static void process_action(struct input_device* device, struct layer* layer, int
                     deactivate_layer(device, activation);
                 }
             }
+            else if (action->data.overload_mod.timeout_ms > 0) // IS_REPEAT(value)
+            {
+                struct activation* activation = find_activation_by_code(device, code);
+                if (activation != NULL && !activation->data.overload_mod.active)
+                {
+                    if (timeout_has_expired(timestamp, activation->data.overload_mod.timeout_timestamp))
+                    {
+                        // Action timed-out, activate on repeat
+                        activate_overload_mod(device, activation, activation->data.overload_mod.delayed_code, timestamp);
+                    }
+                }
+            }
             break;
         }
         case ACTION_OVERLOAD_LAYER:
         {
-            // Ignore repeat events
             if (IS_PRESS(value))
             {
-                activate_layer(device, layers[action->data.overload_layer.layer_index], ACTIVATION_OVERLOAD_LAYER, code);
+                struct activation* activation = activate_layer(device, layers[action->data.overload_layer.layer_index], ACTIVATION_OVERLOAD_LAYER, code);
+                int timeout_ms = action->data.overload_layer.timeout_ms;
+                if (timeout_ms > 0)
+                {
+                    struct timeval a = timestamp;
+                    struct timeval b = {0, timeout_ms * 1000};
+                    timeradd(&a, &b, &activation->data.overload_layer.timeout_timestamp);
+                }
+                else
+                {
+                    timerclear(&activation->data.overload_layer.timeout_timestamp);
+                }
             }
             else if (IS_RELEASE(value))
             {
                 struct activation* activation = find_activation_by_code(device, code);
                 if (activation != NULL)
                 {
+                    if (!activation->data.overload_layer.active && timeout_has_expired(timestamp, activation->data.overload_layer.timeout_timestamp))
+                    {
+                        // Action timed-out, activate on release
+                        activate_overload(device, activation, activation->data.overload_layer.delayed_code, timestamp);
+                    }
+
                     if (!activation->data.overload_layer.active)
                     {
                         // Send overload-layer key and delayed key code, if one
@@ -253,6 +311,18 @@ static void process_action(struct input_device* device, struct layer* layer, int
                         emit(EV_KEY, action->data.overload_layer.code, 0);
                     }
                     deactivate_layer(device, activation);
+                }
+            }
+            else if (action->data.overload_layer.timeout_ms > 0) // IS_REPEAT(value)
+            {
+                struct activation* activation = find_activation_by_code(device, code);
+                if (activation != NULL && !activation->data.overload_layer.active)
+                {
+                    if (timeout_has_expired(timestamp, activation->data.overload_layer.timeout_timestamp))
+                    {
+                        // Action timed-out, activate on repeat
+                        activate_overload(device, activation, activation->data.overload_layer.delayed_code, timestamp);
+                    }
                 }
             }
             break;
@@ -415,7 +485,7 @@ static void process_action(struct input_device* device, struct layer* layer, int
 /**
  * Processes a key input event. Converts and emits events as necessary.
  * */
-void processKey(struct input_device* device, int type, int code, int value)
+void processKey(struct input_device* device, int type, int code, int value, struct timeval timestamp)
 {
     code = device->remap[code];
 
@@ -424,11 +494,11 @@ void processKey(struct input_device* device, int type, int code, int value)
         if (device->pressed[code])
         {
             // Key was pressed in device layer or a layer that has been deactivated
-            process_action(device, PRESSED_TO_LAYER(device, code), code, value);
+            process_action(device, PRESSED_TO_LAYER(device, code), code, value, timestamp);
         }
         else
         {
-            process_action(device, device->layer, code, value);
+            process_action(device, device->layer, code, value, timestamp);
         }
     }
     else if (code == device->top_activation->code)
@@ -438,7 +508,7 @@ void processKey(struct input_device* device, int type, int code, int value)
         if (device->pressed[code])
         {
             // Repeat or release the key used to activate current layer
-            process_action(device, PRESSED_TO_LAYER(device, code), code, value);
+            process_action(device, PRESSED_TO_LAYER(device, code), code, value, timestamp);
         }
         else
         {
@@ -449,7 +519,7 @@ void processKey(struct input_device* device, int type, int code, int value)
     else if (isModifier(code) && (device->top_activation->layer->keymap[code].kind == ACTION_TRANSPARENT || (device->pressed[code] && PRESSED_TO_LAYER(device, code) != device->top_activation->layer)))
     {
         // Handle modifier here if not mapped, to avoid activating the layer
-        process_action(device, device->pressed[code] ? PRESSED_TO_LAYER(device, code) : find_key_layer(device, code, value), code, value);
+        process_action(device, device->pressed[code] ? PRESSED_TO_LAYER(device, code) : find_key_layer(device, code, value), code, value, timestamp);
     }
     else
     {
@@ -469,11 +539,18 @@ void processKey(struct input_device* device, int type, int code, int value)
                         {
                             // Delay first key press after pressing the overload-mod key
                             activation->data.overload_mod.delayed_code = code;
+
+                            if (timeout_has_expired(timestamp, activation->data.overload_mod.timeout_timestamp))
+                            {
+                                // Action timed-out, activate on first key press
+                                activate_overload_mod(device, activation, code, timestamp);
+                            }
+
                             return;
                         }
 
                         // A second key press activates the overload-mod layer
-                        activate_overload_mod(device, activation, delayed_code);
+                        activate_overload_mod(device, activation, delayed_code, timestamp);
                     }
                 }
                 else
@@ -485,7 +562,7 @@ void processKey(struct input_device* device, int type, int code, int value)
                         // A key that was pressed before the overload-mod key was pressed
                         if (device->pressed[code])
                         {
-                            process_action(device, PRESSED_TO_LAYER(device, code), code, value);
+                            process_action(device, PRESSED_TO_LAYER(device, code), code, value, timestamp);
                         }
                         else
                         {
@@ -497,11 +574,11 @@ void processKey(struct input_device* device, int type, int code, int value)
                     if (!activation->data.overload_mod.active)
                     {
                         // Delayed key was repeated or released, activate the overload-mod layer
-                        activate_overload_mod(device, activation, delayed_code);
+                        activate_overload_mod(device, activation, delayed_code, timestamp);
                     }
                 }
 
-                process_action(device, find_key_layer(device, code, value), code, value);
+                process_action(device, find_key_layer(device, code, value), code, value, timestamp);
                 break;
             }
             case ACTIVATION_OVERLOAD_LAYER:
@@ -517,11 +594,18 @@ void processKey(struct input_device* device, int type, int code, int value)
                         {
                             // Delay first key press after pressing the overload-layer key
                             activation->data.overload_layer.delayed_code = code;
+
+                            if (timeout_has_expired(timestamp, activation->data.overload_layer.timeout_timestamp))
+                            {
+                                // Action timed-out, activate on first key press
+                                activate_overload(device, activation, code, timestamp);
+                            }
+
                             return;
                         }
 
                         // A second key press activates the overload layer
-                        activate_overload(device, activation, delayed_code);
+                        activate_overload(device, activation, delayed_code, timestamp);
                     }
                 }
                 else
@@ -533,7 +617,7 @@ void processKey(struct input_device* device, int type, int code, int value)
                         // A key that was pressed before the overload-layer key was pressed
                         if (device->pressed[code])
                         {
-                            process_action(device, PRESSED_TO_LAYER(device, code), code, value);
+                            process_action(device, PRESSED_TO_LAYER(device, code), code, value, timestamp);
                         }
                         else
                         {
@@ -545,16 +629,16 @@ void processKey(struct input_device* device, int type, int code, int value)
                     if (!activation->data.overload_layer.active)
                     {
                         // Delayed key was repeated or released, activate the overload layer
-                        activate_overload(device, activation, delayed_code);
+                        activate_overload(device, activation, delayed_code, timestamp);
                     }
                 }
 
-                process_action(device, find_key_layer(device, code, value), code, value);
+                process_action(device, find_key_layer(device, code, value), code, value, timestamp);
                 break;
             }
             case ACTIVATION_SHIFT_LAYER:
             {
-                process_action(device, find_key_layer(device, code, value), code, value);
+                process_action(device, find_key_layer(device, code, value), code, value, timestamp);
                 break;
             }
             case ACTIVATION_LATCH_LAYER:
@@ -583,7 +667,7 @@ void processKey(struct input_device* device, int type, int code, int value)
                     }
                 }
 
-                process_action(device, layer, code, value);
+                process_action(device, layer, code, value, timestamp);
                 break;
             }
             case ACTIVATION_LOCK_LAYER:
@@ -594,7 +678,7 @@ void processKey(struct input_device* device, int type, int code, int value)
                     activation->kind = ACTIVATION_SHIFT_LAYER;
                 }
 
-                process_action(device, find_key_layer(device, code, value), code, value);
+                process_action(device, find_key_layer(device, code, value), code, value, timestamp);
                 break;
             }
         }

@@ -228,7 +228,8 @@ void read_inputs()
                 if (event.type == EV_KEY
                     && (event.value == 0 || event.value == 1 || event.value == 2))
                 {
-                    processKey(device, event.type, event.code, event.value);
+                    struct timeval timestamp = {event.input_event_sec, event.input_event_usec};
+                    processKey(device, event.type, event.code, event.value, timestamp);
                 }
                 else
                 {
