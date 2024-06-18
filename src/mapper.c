@@ -125,7 +125,7 @@ static struct layer* find_key_layer(struct input_device* device, int code, int v
         }
         else
         {
-            error("error: the service did not properly check if key was in pressed array before calling find_key_layer()\n");
+            error("error: the service did not properly check if '%s' key was in pressed array before calling find_key_layer()\n", convertKeyCodeToString(code));
         }
     }
 
@@ -498,7 +498,7 @@ static void process_action(struct input_device* device, struct layer* layer, int
     {
         case ACTION_TRANSPARENT:
         {
-            error("error: the service did not properly pass-through a transparent key before calling process_action()\n");
+            error("error: the service did not properly pass-through transparent key '%s' before calling process_action()\n", convertKeyCodeToString(code));
             break;
         }
         case ACTION_DISABLED: break;

@@ -575,6 +575,32 @@ int convertKeyStringToCode(char* keyString)
     return 0;
 }
 
+static char code_to_key_string[64];
+
+/**
+ * Converts a key code to its corresponding string.
+ * */
+const char* convertKeyCodeToString(int keyCode)
+{
+    for (int i = 0; keys[i].name != NULL; i++)
+    {
+        if (keyCode == keys[i].code)
+        {
+            snprintf(code_to_key_string, 64, "KEY_%s", keys[i].name);
+            return code_to_key_string;
+        }
+    }
+    for (int i = 0; buttons[i].name != NULL; i++)
+    {
+        if (keyCode == buttons[i].code)
+        {
+            snprintf(code_to_key_string, 64, "BTN_%s", buttons[i].name);
+            return code_to_key_string;
+        }
+    }
+    return NULL;
+}
+
 /**
  * Checks if the key is a modifier key.
  * */
