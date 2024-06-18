@@ -713,6 +713,41 @@ static void process_action(struct input_device* device, struct layer* layer, int
             }
             break;
         }
+        case ACTION_LATCH_MENU:
+        {
+            // Ignore repeat events
+            if (IS_PRESS(value))
+            {
+                // Find a [Menu] in active device or layout layers
+                struct activation* activation = FIND_ACTIVATION(device, activation->layer->is_layout);
+                struct layer* layout_layer = (activation ? activation->layer : device->layer);
+                if (layout_layer->menu_layer)
+                {
+                    activate_layer(device, layout_layer->menu_layer, ACTIVATION_LATCH_LAYER, code);
+                }
+                // Do nothing if not found
+            }
+            else if (IS_RELEASE(value))
+            {
+                struct activation* activation = find_activation_by_code(device, code);
+                if (activation != NULL)
+                {
+                    if (activation->kind == ACTIVATION_SHIFT_LAYER)
+                    {
+                        // Latch-menu key was released as a shift activation
+                        deactivate_layer(device, activation);
+                    }
+                    else
+                    {
+                        // The menu layer will be deactivated on the first key press
+                        activation->action = action;
+                        activation->code = 0;
+                    }
+                }
+                // else latch key was released a second time, and was unlatched on press
+            }
+            break;
+        }
         case ACTION_LOCK_LAYER:
         {
             // Ignore repeat events

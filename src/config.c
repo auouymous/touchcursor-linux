@@ -28,6 +28,7 @@ int max_codepoint_strings;
 struct layer* layers[MAX_LAYERS];
 static int nr_layers = 0;
 struct layer* transparent_layer;
+static uint8_t disable_unset_keys[MAX_LAYERS];
 
 static uint8_t default_layer_leds[MAX_LAYER_LEDS];
 
@@ -443,6 +444,18 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
                 setLayerActionLatch(layer, fromCode, NULL, lineno, to_layer_path);
                 return;
             }
+            if (strcmp(action, "latch-menu") == 0)
+            {
+                // (latch-menu)
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                setLayerActionLatchMenu(layer, fromCode, lineno);
+                return;
+            }
             if (strcmp(action, "lock") == 0)
             {
                 // (lock to_layer)
@@ -794,12 +807,29 @@ static void parse_command(char* line, int lineno, struct layer* user_layer)
                 return;
             }
 
-            if (user_layer->device_index != 0xFF)
+            if (user_layer->device_index != 0xFF || user_layer->name[0] == ' ')
             {
-                error("error[%d]: is-layout command is not valid in a device layer\n", lineno);
+                error("error[%d]: is-layout command is not valid in a device layer or [Menu] layer\n", lineno);
                 return;
             }
             user_layer->is_layout = 1;
+            return;
+        }
+        if (strcmp(command, "disable-unset-keys") == 0)
+        {
+            // (disable-unset-keys)
+            if (tokens)
+            {
+                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                return;
+            }
+
+            if (user_layer->device_index != 0xFF || user_layer->name[0] == ' ')
+            {
+                error("error[%d]: disable-unset-keys command is not valid in a device layer or [Menu] layer\n", lineno);
+                return;
+            }
+            disable_unset_keys[user_layer->index] = 1;
             return;
         }
         if (strcmp(command, "leds") == 0)
@@ -849,6 +879,18 @@ static void parse_command(char* line, int lineno, struct layer* user_layer)
                     duplicate_layer_path_reference(&user_layer->keymap[k], &layer->keymap[k]);
                 }
             }
+
+            if (layer->menu_layer)
+            {
+                if (user_layer->device_index == 0xFF && !user_layer->is_layout)
+                {
+                    warn("warning[%d]: layer being copied has a [Menu]: %s\n" \
+                         "\tOnly device layers and layout layers can have a [Menu] section.\n" \
+                         "\tAdd (is-layout) to \"%s\" to copy its [Menu].", lineno, layer_path, user_layer->name);
+                    return;
+                }
+                user_layer->menu_layer = layer->menu_layer;
+            }
             return;
         }
     }
@@ -893,6 +935,7 @@ int read_configuration()
     memset(layers, 0, sizeof(layers));
     nr_layers = 0;
     transparent_layer = NULL;
+    memset(disable_unset_keys, 0, sizeof(disable_unset_keys));
 
     memset(default_layer_leds, 0, sizeof(default_layer_leds));
 
@@ -1224,6 +1267,20 @@ int read_configuration()
                         user_remap = input_devices[user_layer->device_index].remap;
                         continue;
                     }
+                    if (strncmp(line, "[Menu]", line_length) == 0)
+                    {
+                        if (user_layer->device_index == 0xFF && !user_layer->is_layout)
+                        {
+                            error("error[%d]: only device layers and layout layers can have a [Menu] section\n", lineno);
+                            invalid_layer_indent = indent;
+                            continue;
+                        }
+                        user_layer = registerLayer(lineno, user_layer, "Menu");
+                        user_layer->parent_layer->menu_layer = user_layer;
+                        disable_unset_keys[user_layer->index] = 1;
+                        section = configuration_layer;
+                        continue;
+                    }
 
                     if (line_length && parse_user_layer(line, lineno, line_length, &user_layer, &section)) continue;
 
@@ -1293,6 +1350,22 @@ int read_configuration()
             if (input_devices[d].layer->name[0] == 'D')
             {
                 setLayerActionOverload(input_devices[d].layer, hyperKey, hyper_layer, 0, NULL, hyperKey, 0);
+            }
+        }
+    }
+
+    for (int i = 0; i < nr_layers; i++)
+    {
+        if (disable_unset_keys[i])
+        {
+            struct layer* layer = layers[i];
+            // Disable all unset bindings
+            for (int k = 0; k < MAX_KEYMAP; k++)
+            {
+                if (layer->keymap[k].kind == ACTION_TRANSPARENT && !isModifier(k))
+                {
+                    layer->keymap[k].kind = ACTION_DISABLED;
+                }
             }
         }
     }
@@ -1563,6 +1636,14 @@ void setLayerActionLatch(struct layer* layer, int key, struct layer* to_layer, i
 }
 
 /**
+ * Set latch-menu key in layer, for current [Menu] layer.
+ */
+void setLayerActionLatchMenu(struct layer* layer, int key, int lineno)
+{
+    layer->keymap[key].kind = ACTION_LATCH_MENU;
+}
+
+/**
  * Set lock-layer key in layer.
  */
 void setLayerActionLock(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint8_t is_overlay)
@@ -1634,6 +1715,7 @@ struct layer* registerLayer(int lineno, struct layer* parent_layer, char* name)
         strcpy(layer->name, name);
     }
     layer->parent_layer = parent_layer;
+    layer->menu_layer = NULL;
     memset(layer->keymap, 0, sizeof(layer->keymap));
     memcpy(layer->leds, default_layer_leds, sizeof(layer->leds));
 
