@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "config.h"
 #include "buffers.h"
@@ -195,6 +196,245 @@ static void restore_all_output_modifiers(uint8_t modifiers)
     }
 }
 
+#define SHIFT 0x8000
+static uint16_t codepoint_to_keycode[256] = {
+    // control codes
+    0, 0, 0, 0, 0, 0, 0, 0, KEY_BACKSPACE, KEY_TAB, KEY_ENTER, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, KEY_ESC, 0, 0, 0, 0,
+    //  !"#$%&'()*+,-./0123456789:;<=>?
+    KEY_SPACE,
+    SHIFT|KEY_1,
+    SHIFT|KEY_APOSTROPHE,
+    SHIFT|KEY_3,
+    SHIFT|KEY_4,
+    SHIFT|KEY_5,
+    SHIFT|KEY_7,
+    KEY_APOSTROPHE,
+    SHIFT|KEY_9,
+    SHIFT|KEY_0,
+    SHIFT|KEY_8,
+    SHIFT|KEY_EQUAL,
+    KEY_COMMA,
+    KEY_MINUS,
+    KEY_DOT,
+    KEY_SLASH,
+    KEY_0,
+    KEY_1,
+    KEY_2,
+    KEY_3,
+    KEY_4,
+    KEY_5,
+    KEY_6,
+    KEY_7,
+    KEY_8,
+    KEY_9,
+    SHIFT|KEY_SEMICOLON,
+    KEY_SEMICOLON,
+    SHIFT|KEY_COMMA,
+    KEY_EQUAL,
+    SHIFT|KEY_DOT,
+    SHIFT|KEY_SLASH,
+    // @ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_
+    SHIFT|KEY_2,
+    SHIFT|KEY_A,
+    SHIFT|KEY_B,
+    SHIFT|KEY_C,
+    SHIFT|KEY_D,
+    SHIFT|KEY_E,
+    SHIFT|KEY_F,
+    SHIFT|KEY_G,
+    SHIFT|KEY_H,
+    SHIFT|KEY_I,
+    SHIFT|KEY_J,
+    SHIFT|KEY_K,
+    SHIFT|KEY_L,
+    SHIFT|KEY_M,
+    SHIFT|KEY_N,
+    SHIFT|KEY_O,
+    SHIFT|KEY_P,
+    SHIFT|KEY_Q,
+    SHIFT|KEY_R,
+    SHIFT|KEY_S,
+    SHIFT|KEY_T,
+    SHIFT|KEY_U,
+    SHIFT|KEY_V,
+    SHIFT|KEY_W,
+    SHIFT|KEY_X,
+    SHIFT|KEY_Y,
+    SHIFT|KEY_Z,
+    KEY_LEFTBRACE,
+    KEY_BACKSLASH,
+    KEY_RIGHTBRACE,
+    SHIFT|KEY_6,
+    SHIFT|KEY_MINUS,
+    // `abcdefghijklmnopqrstuvwxyz{|}~
+    KEY_GRAVE,
+    KEY_A,
+    KEY_B,
+    KEY_C,
+    KEY_D,
+    KEY_E,
+    KEY_F,
+    KEY_G,
+    KEY_H,
+    KEY_I,
+    KEY_J,
+    KEY_K,
+    KEY_L,
+    KEY_M,
+    KEY_N,
+    KEY_O,
+    KEY_P,
+    KEY_Q,
+    KEY_R,
+    KEY_S,
+    KEY_T,
+    KEY_U,
+    KEY_V,
+    KEY_W,
+    KEY_X,
+    KEY_Y,
+    KEY_Z,
+    SHIFT|KEY_LEFTBRACE,
+    SHIFT|KEY_BACKSLASH,
+    SHIFT|KEY_RIGHTBRACE,
+    SHIFT|KEY_GRAVE,
+    0, // delete
+};
+
+static uint8_t base32_keys[36] = {
+    KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
+    KEY_A, KEY_B, KEY_C, KEY_D, KEY_E, KEY_F, KEY_G, KEY_H, KEY_I, KEY_J,
+    KEY_K, KEY_L, KEY_M, KEY_N, KEY_O, KEY_P, KEY_Q, KEY_R, KEY_S, KEY_T,
+    KEY_U, KEY_V, // KEY_W, KEY_X, KEY_Y, KEY_Z,
+};
+
+/**
+ * Convert codepoint to a base32 key sequence.
+ * */
+static void codepoint_to_base32(int codepoint, uint8_t keys[5])
+{
+    for (int i = 0; i < 5; i++)
+    {
+        keys[i] = base32_keys[codepoint & 0x1F];
+        codepoint >>= 5;
+    }
+}
+
+static char base16_keys[16] = {
+    KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9,
+    KEY_A, KEY_B, KEY_C, KEY_D, KEY_E, KEY_F,
+};
+
+/**
+ * Convert codepoint to a base16 key sequence.
+ * */
+static int codepoint_to_base16(int codepoint, uint8_t keys[6])
+{
+    for (int i = 0; i < 6; i++)
+    {
+        keys[i] = base16_keys[codepoint & 0xF];
+        codepoint >>= 4;
+        if (codepoint == 0) return i;
+    }
+    return 6 - 1;
+}
+
+/**
+ * Emit keycode for ASCII codepoint, if available.
+ * */
+static void emit_codepoint_to_keycode(int codepoint)
+{
+    int key = codepoint_to_keycode[codepoint];
+    if (key == 0) return; // Ignore control codes
+
+    int shift = (key & SHIFT);
+    key &= ~SHIFT;
+    if (shift) emit(EV_KEY, KEY_LEFTSHIFT, 1);
+    emit(EV_KEY, key, 1);
+    emit(EV_KEY, key, 0);
+    if (shift) emit(EV_KEY, KEY_LEFTSHIFT, 0);
+}
+
+/**
+ * Emit a codepoint sequence.
+ * */
+static int emit_codepoint(uint8_t* bytes)
+{
+    int codepoint = (bytes[2] << 16) | (bytes[1] << 8) | bytes[0];
+    if (codepoint == 0) return 0;
+
+    if (codepoint < 0x20)
+    {
+        emit_codepoint_to_keycode(codepoint);
+        return 1;
+    }
+
+    switch (ukey_input_method)
+    {
+        case input_method_none:
+        {
+            // Ignore non-ASCII codepoints
+            if (codepoint <= 0x7F)
+            {
+                emit_codepoint_to_keycode(codepoint);
+            }
+            break;
+        }
+        case input_method_compose:
+        {
+            emit(EV_KEY, ukey_compose_key, 1);
+            emit(EV_KEY, ukey_compose_key, 0);
+            // Send 5 base32 key taps
+            uint8_t keys[5];
+            codepoint_to_base32(codepoint, keys);
+            for (int i = 4; i >= 0; i--)
+            {
+                emit(EV_KEY, keys[i], 1);
+                emit(EV_KEY, keys[i], 0);
+            }
+            break;
+        }
+        case input_method_iso14755:
+        {
+            emit(EV_KEY, KEY_LEFTCTRL, 1);
+            emit(EV_KEY, KEY_LEFTSHIFT, 1);
+            // Send 1-6 base16 key taps
+            uint8_t keys[6];
+            int nr_keys = codepoint_to_base16(codepoint, keys);
+            for (int i = nr_keys; i >= 0; i--)
+            {
+                emit(EV_KEY, keys[i], 1);
+                emit(EV_KEY, keys[i], 0);
+            }
+            emit(EV_KEY, KEY_LEFTSHIFT, 0);
+            emit(EV_KEY, KEY_LEFTCTRL, 0);
+            break;
+        }
+        case input_method_gtk:
+        {
+            emit(EV_KEY, KEY_LEFTCTRL, 1);
+            emit(EV_KEY, KEY_LEFTSHIFT, 1);
+            emit(EV_KEY, KEY_U, 1);
+            emit(EV_KEY, KEY_U, 0);
+            emit(EV_KEY, KEY_LEFTSHIFT, 0);
+            emit(EV_KEY, KEY_LEFTCTRL, 0);
+            // Send 1-6 base16 key taps
+            uint8_t keys[6];
+            int nr_keys = codepoint_to_base16(codepoint, keys);
+            for (int i = nr_keys; i >= 0; i--)
+            {
+                emit(EV_KEY, keys[i], 1);
+                emit(EV_KEY, keys[i], 0);
+            }
+            emit(EV_KEY, KEY_SPACE, 1);
+            emit(EV_KEY, KEY_SPACE, 0);
+            break;
+        }
+    }
+    return 1;
+}
+
 /**
  * Check if timeout has expired.
  * */
@@ -270,6 +510,30 @@ static void process_action(struct input_device* device, struct layer* layer, int
         case ACTION_KEYS:
         {
             emit_key_sequence(MAX_SEQUENCE, action->data.keys.codes, value);
+            break;
+        }
+        case ACTION_UKEY:
+        {
+            if (value != 0)
+            {
+                uint8_t modifiers = release_all_output_modifiers();
+                emit_codepoint(action->data.ukey.codepoint);
+                restore_all_output_modifiers(modifiers);
+            }
+            break;
+        }
+        case ACTION_UKEYS:
+        {
+            if (value != 0)
+            {
+                uint8_t modifiers = release_all_output_modifiers();
+                for (int i = 0; i < MAX_SEQUENCE_UKEY; i += 3)
+                {
+                    if (!emit_codepoint(&action->data.ukeys.codepoints[i])) break;
+                    usleep(ukeys_delay);
+                }
+                restore_all_output_modifiers(modifiers);
+            }
             break;
         }
         case ACTION_OVERLOAD_MOD:
@@ -536,6 +800,11 @@ static void process_action(struct input_device* device, struct layer* layer, int
                     }
                 }
             }
+            break;
+        }
+        case ACTION_INPUT_METHOD:
+        {
+            ukey_input_method = action->data.input_method.mode;
             break;
         }
     }
