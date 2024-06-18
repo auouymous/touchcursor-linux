@@ -187,7 +187,16 @@ static void clean_up()
  * */
 int main(int argc, char* argv[])
 {
-    if (argc > 1)
+    if (argc == 2 && strcmp(argv[1], "check-conf") == 0)
+    {
+        if (find_configuration_file() != EXIT_SUCCESS)
+        {
+            error("error: could not find the configuration file\n");
+            return EXIT_FAILURE;
+        }
+        return read_configuration();
+    }
+    else if (argc > 1)
     {
         error("error: invalid arguments\n");
         return EXIT_FAILURE;
