@@ -69,6 +69,12 @@ extern int beep_on_invalid_codepoint_duration_ms;
 extern uint8_t** codepoint_strings;
 
 /**
+ * Pointer acceleration rate and maximum acceleration.
+ * */
+extern float pointer_accel_rate;
+extern float pointer_accel_max;
+
+/**
  * Key action.
  * */
 enum action_kind
@@ -80,6 +86,8 @@ enum action_kind
     ACTION_UKEY,            // emit a single unicode key sequence
     ACTION_UKEYS,           // emit multiple unicode key sequences
     ACTION_UKEYS_STR,       // emit long string of unicode key sequences
+    ACTION_POINTER_MOVE,    // emit pointer move
+    ACTION_POINTER_SCROLL,  // emit pointer scroll
     ACTION_OVERLOAD_MOD,    // press keys on hold, or emit a single key code on tap
     ACTION_LATCH_MOD,       // latch modifier on tap, or shift if held
     ACTION_LOCK_MOD,        // lock modifier on tap, or shift if held
@@ -112,6 +120,14 @@ struct action
             uint16_t codepoint_string_index;
             uint16_t length;
         } ukeys_str;
+        struct {
+            int16_t x;
+            int16_t y;
+        } pointer_move;
+        struct {
+            int16_t x;
+            int16_t y;
+        } pointer_scroll;
         struct {
             uint16_t codes[MAX_SEQUENCE_OVERLOAD_MOD];
             uint16_t code;
@@ -285,6 +301,16 @@ void setLayerKey(struct layer* layer, int key, unsigned int length, uint16_t* se
  * Set codepoint or codepoint sequence in layer.
  */
 void setLayerUKey(struct layer* layer, int key, unsigned int length, uint8_t* sequence);
+
+/**
+ * Set pointer move in layer.
+ */
+void setLayerPointerMove(struct layer* layer, int key, int16_t x, int16_t y);
+
+/**
+ * Set pointer scroll in layer.
+ */
+void setLayerPointerScroll(struct layer* layer, int key, int16_t x, int16_t y);
 
 /**
  * Set overload-mod key in layer.
