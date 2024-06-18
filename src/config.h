@@ -81,6 +81,9 @@ enum action_kind
     ACTION_UKEYS,           // emit multiple unicode key sequences
     ACTION_UKEYS_STR,       // emit long string of unicode key sequences
     ACTION_OVERLOAD_MOD,    // press keys on hold, or emit a single key code on tap
+    ACTION_LATCH_MOD,       // latch modifier on tap, or shift if held
+    ACTION_LOCK_MOD,        // lock modifier on tap, or shift if held
+    ACTION_LOCK_MOD_IF,     // lock modifier if another modifier is pressed
     ACTION_OVERLOAD_LAYER,  // activate layer on hold, or emit a single key code on tap
     ACTION_SHIFT_LAYER,     // activate layer on hold
     ACTION_LATCH_LAYER,     // activate layer on hold, or activate layer for a single key press after released
@@ -114,6 +117,20 @@ struct action
             uint16_t code;
             uint16_t timeout_ms; // milliseconds
         } overload_mod;
+        struct {
+            uint8_t modifier_bit; // bit mask for modifier code
+            uint8_t modifier_code; // modifier key code
+        } latch_mod;
+        struct {
+            uint8_t modifier_bit; // bit mask for modifier code
+            uint8_t modifier_code; // modifier key code
+        } lock_mod;
+        struct {
+            uint8_t modifier_bit; // bit mask for modifier code
+            uint8_t modifier_code; // primary key code
+            uint8_t if_bit; // bit mask for secondary modifier code
+            uint8_t if_code; // secondary key code
+        } lock_mod_if;
         struct {
             uint8_t layer_index;
             uint16_t code;
@@ -162,6 +179,9 @@ extern struct layer* transparent_layer;
 enum activation_kind
 {
     ACTIVATION_OVERLOAD_MOD,
+    ACTIVATION_LATCH_MOD,
+    ACTIVATION_LOCK_MOD,
+    ACTIVATION_LOCK_MOD_IF,
     ACTIVATION_OVERLOAD_LAYER,
     ACTIVATION_SHIFT_LAYER,
     ACTIVATION_LATCH_LAYER,
@@ -181,6 +201,15 @@ struct activation
             uint16_t delayed_code; // delay first key press
             struct timeval timeout_timestamp;
         } overload_mod;
+        struct {
+            uint8_t shifted; // another key pressed while held
+        } latch_mod;
+        struct {
+            uint8_t shifted; // another key pressed while held
+        } lock_mod;
+        struct {
+            uint8_t if_code; // secondary key code
+        } lock_mod_if;
         struct {
             uint8_t active; // after second event
             uint16_t delayed_code; // delay first key press
@@ -283,9 +312,24 @@ void setLayerActionLatch(struct layer* layer, int key, struct layer* to_layer, i
 void setLayerActionLatchMenu(struct layer* layer, int key, int lineno);
 
 /**
+ * Set latch-mod key in layer.
+ */
+void setLayerActionLatchMod(struct layer* layer, int key, int lineno, uint8_t code);
+
+/**
  * Set lock-layer key in layer.
  */
 void setLayerActionLock(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint8_t is_overlay);
+
+/**
+ * Set lock-mod key in layer.
+ */
+void setLayerActionLockMod(struct layer* layer, int key, int lineno, uint8_t code);
+
+/**
+ * Set lock-mod-if key in layer.
+ */
+void setLayerActionLockModIf(struct layer* layer, int key, int lineno, uint8_t if_code);
 
 /**
  * Set unlock key in layer.

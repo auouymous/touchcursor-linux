@@ -658,32 +658,61 @@ const uint8_t modifier_bit_list[] = {
 };
 
 /**
+ * Return modifier bit for key code.
+ * */
+uint8_t modifierKeyCodeToBit(uint8_t keyCode)
+{
+    switch (keyCode)
+    {
+        case KEY_LEFTSHIFT: return MOD_LEFTSHIFT;
+        case KEY_RIGHTSHIFT: return MOD_RIGHTSHIFT;
+        case KEY_LEFTCTRL: return MOD_LEFTCTRL;
+        case KEY_RIGHTCTRL: return MOD_RIGHTCTRL;
+        case KEY_LEFTALT: return MOD_LEFTALT;
+        case KEY_RIGHTALT: return MOD_RIGHTALT;
+        case KEY_LEFTMETA: return MOD_LEFTMETA;
+        case KEY_RIGHTMETA: return MOD_RIGHTMETA;
+        default: break;
+    }
+    return 0;
+}
+
+/**
  * Output modifier states.
  * */
 uint8_t output_modifier_states = 0;
 
-static void set_output_modifier(uint8_t name, int value)
+/**
+ * Locked modifiers.
+ * */
+uint8_t locked_modifiers = 0;
+
+static int set_output_modifier(uint8_t name, int value)
 {
     switch (value)
     {
         case 1:
         {
+            if (output_modifier_states & name) return 1; // Do not send modifier
             output_modifier_states |= name;
             break;
         }
         case 0:
         {
+            if ((output_modifier_states & name) == 0) return 1; // Do not send modifier
+            if (locked_modifiers & name) return 1; // Do not release locked modifiers
             output_modifier_states &= ~name;
             break;
         }
         default: break; // repeat
     }
+    return 0;
 }
 
 /**
- * Toggle output modifier state.
+ * Toggle output modifier state, and return non-zero if event should not be emitted.
  * */
-void toggleOutputModifierState(int code, int value)
+int toggleOutputModifierState(int code, int value)
 {
     switch (code)
     {
@@ -697,4 +726,5 @@ void toggleOutputModifierState(int code, int value)
         case KEY_RIGHTMETA: return set_output_modifier(MOD_RIGHTMETA, value);
         default: break;
     }
+    return 0;
 }

@@ -65,13 +65,25 @@ extern const uint16_t modifier_key_list[];
 extern const uint8_t modifier_bit_list[];
 
 /**
+ * Return modifier bit for key code.
+ * */
+uint8_t modifierKeyCodeToBit(uint8_t keyCode);
+
+/**
  * Output modifier states.
  * */
 extern uint8_t output_modifier_states;
 
+#define IS_MODIFIER_LOCKED(modifiers) ((locked_modifiers & (modifiers)) == (modifiers))
+
 /**
- * Toggle output modifier state.
+ * Locked modifiers.
  * */
-void toggleOutputModifierState(int code, int value);
+extern uint8_t locked_modifiers;
+
+/**
+ * Toggle output modifier state, and return true if event should not be emitted.
+ * */
+int toggleOutputModifierState(int code, int value);
 
 #endif

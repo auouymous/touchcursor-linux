@@ -30,7 +30,7 @@ struct input_device* test_device;
  */
 void emit(int type, int code, int value)
 {
-    toggleOutputModifierState(code, value);
+    if (toggleOutputModifierState(code, value)) return;
 
     sprintf(emitString, "%i:%i ", code, value);
     strcat(output, emitString);
@@ -47,6 +47,11 @@ struct test_keys
 static struct test_keys test_keys[] = {
     {KEY_LEFTSHIFT, "leftshift"}, // not mapped in layer
     {KEY_LEFTCTRL, "leftctrl"}, // not mapped in layer
+    {KEY_LEFTALT, "lock-mod-if"},
+    {KEY_RIGHTALT, "lock-mod-if-secondary"},
+    {KEY_LEFTMETA, "latch-mod"}, {KEY_LEFTBRACE, "latch-nonmod"},
+    {KEY_RIGHTMETA, "lock-mod"}, {KEY_RIGHTBRACE, "lock-nonmod"},
+    {KEY_ESC, "unlock-all"},
     {KEY_CANCEL, "cancel"}, // not mapped in layer
 
     {KEY_O, "other"}, // not mapped in layer
@@ -364,6 +369,31 @@ static void testNormalTyping()
     TYPE("overload-500ms down, wait 1000, other down", EXPECT, "other down");
         processKey(test_device, EV_KEY, KEY("overload-500ms"), 0, timestamp); // Deactivate to avoid memory leaks
 
+    TYPE("latch-mod tap, m1 tap", EXPECT, "latch-mod down, m1 down, latch-mod up, m1 up");
+    TYPE("latch-mod tap, latch-mod tap, m1 tap", EXPECT, "latch-mod tap, m1 tap");
+    TYPE("latch-mod down, m1 tap, latch-mod up, m1 tap", EXPECT, "latch-mod down, m1 tap, latch-mod up, m1 tap");
+
+    TYPE("latch-nonmod tap, m1 tap", EXPECT, "latch-mod down, m1 down, latch-mod up, m1 up");
+    TYPE("latch-nonmod tap, latch-nonmod tap, m1 tap", EXPECT, "latch-mod tap, m1 tap");
+    TYPE("latch-nonmod down, m1 tap, latch-nonmod up, m1 tap", EXPECT, "latch-mod down, m1 tap, latch-mod up, m1 tap");
+
+    TYPE("lock-mod tap, m1 tap, lock-mod tap, m1 tap", EXPECT, "lock-mod down, m1 tap, lock-mod up, m1 tap");
+    TYPE("lock-mod down, m1 tap, lock-mod up, m1 tap", EXPECT, "lock-mod down, m1 tap, lock-mod up, m1 tap");
+    TYPE("lock-mod tap, m1 tap, unlock-all tap", EXPECT, "lock-mod down, m1 tap, lock-mod up");
+    TYPE("lock-mod down, m1 tap, unlock-all tap, lock-mod up", EXPECT, "lock-mod down, m1 tap, lock-mod up");
+
+    TYPE("lock-nonmod tap, m1 tap, lock-nonmod tap, m1 tap", EXPECT, "lock-mod down, m1 tap, lock-mod up, m1 tap");
+    TYPE("lock-nonmod down, m1 tap, lock-nonmod up, m1 tap", EXPECT, "lock-mod down, m1 tap, lock-mod up, m1 tap");
+    TYPE("lock-nonmod tap, m1 tap, unlock-all tap", EXPECT, "lock-mod down, m1 tap, lock-mod up");
+    TYPE("lock-nonmod down, m1 tap, unlock-all tap, lock-nonmod up", EXPECT, "lock-mod down, m1 tap, lock-mod up");
+
+    TYPE("lock-mod-if tap, m1 tap", EXPECT, "lock-mod-if tap, m1 tap");
+    TYPE("lock-mod-if tap, lock-mod-if-secondary tap, m1 tap", EXPECT, "lock-mod-if tap, lock-mod-if-secondary tap, m1 tap");
+    TYPE("lock-mod-if-secondary down, lock-mod-if tap, lock-mod-if-secondary up, m1 tap, lock-mod-if tap",
+        EXPECT, "lock-mod-if-secondary down, lock-mod-if down, lock-mod-if-secondary up, m1 tap, lock-mod-if up");
+    TYPE("lock-mod-if-secondary down, lock-mod-if tap, lock-mod-if-secondary up, m1 tap, lock-mod-if-secondary tap",
+        EXPECT, "lock-mod-if-secondary down, lock-mod-if down, lock-mod-if-secondary up, m1 tap, lock-mod-if up, lock-mod-if-secondary tap");
+
     // Save and restore pressed modifiers while sending input method sequences
     TYPE("leftctrl down, IM-iso14755 tap, ukey tap, leftctrl up", EXPECT,
         "leftctrl tap, leftctrl down, leftshift down, 4 tap, 48 tap, 2 tap, leftshift up, leftctrl up, leftctrl tap"); // ctrl-shift 3 B 1
@@ -489,6 +519,14 @@ int main()
     setLayerActionLatchMenu(test_device->layer, KEY("latch-menu"), 0);
     setLayerActionLock(test_device->layer, KEY("lock"), test_layer, 0, NULL, 0);
     setLayerActionLock(test_device->layer, KEY("lock-overlay"), test_layer, 0, NULL, 1);
+
+    setLayerActionLatchMod(test_device->layer, KEY("latch-mod"), 0, KEY("latch-mod"));
+    setLayerActionLatchMod(test_device->layer, KEY("latch-nonmod"), 0, KEY("latch-mod"));
+    setLayerActionLockMod(test_device->layer, KEY("lock-mod"), 0, KEY("lock-mod"));
+    setLayerActionLockMod(test_device->layer, KEY("lock-nonmod"), 0, KEY("lock-mod"));
+    setLayerActionLockModIf(test_device->layer, KEY("lock-mod-if"), 0, KEY("lock-mod-if-secondary"));
+    setLayerActionLockModIf(test_device->layer, KEY("lock-mod-if-secondary"), 0, KEY("lock-mod-if"));
+    setLayerActionUnlock(test_device->layer, KEY("unlock-all"), 1);
 
     ukey_compose_key = KEY("cancel");
     uint8_t usequence[6];

@@ -12,7 +12,7 @@
  * */
 void emit(int type, int code, int value)
 {
-    toggleOutputModifierState(code, value);
+    if (toggleOutputModifierState(code, value)) return;
 
     if (type == EV_KEY)
     {

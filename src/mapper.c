@@ -196,6 +196,16 @@ static void emit_key_sequence(unsigned int max, uint16_t* sequence, int value)
 }
 
 /**
+ * Release all output modifier locks and return bitmask to restore.
+ * */
+static uint8_t unlock_all_output_modifiers()
+{
+    uint8_t locks = locked_modifiers;
+    locked_modifiers = 0;
+    return locks;
+}
+
+/**
  * Release all output modifier keys and return bitmask to restore.
  * */
 static uint8_t release_all_output_modifiers()
@@ -216,7 +226,7 @@ static uint8_t release_all_output_modifiers()
 /**
  * Restore all output modifier keys.
  * */
-static void restore_all_output_modifiers(uint8_t modifiers)
+static void restore_all_output_modifiers(uint8_t modifiers, uint8_t locks)
 {
     for (int i = 0; modifiers; i++)
     {
@@ -227,6 +237,7 @@ static void restore_all_output_modifiers(uint8_t modifiers)
             modifiers &= ~m;
         }
     }
+    locked_modifiers = locks;
 }
 
 #define SHIFT 0x8000
@@ -567,9 +578,10 @@ static void process_action(struct input_device* device, struct layer* layer, int
         {
             if (value != 0)
             {
+                uint8_t locks = unlock_all_output_modifiers();
                 uint8_t modifiers = release_all_output_modifiers();
                 emit_codepoint(action->data.ukey.codepoint);
-                restore_all_output_modifiers(modifiers);
+                restore_all_output_modifiers(modifiers, locks);
             }
             break;
         }
@@ -577,13 +589,14 @@ static void process_action(struct input_device* device, struct layer* layer, int
         {
             if (value != 0)
             {
+                uint8_t locks = unlock_all_output_modifiers();
                 uint8_t modifiers = release_all_output_modifiers();
                 for (int i = 0; i < MAX_SEQUENCE_UKEY; i += 3)
                 {
                     if (!emit_codepoint(&action->data.ukeys.codepoints[i])) break;
                     usleep(ukeys_delay);
                 }
-                restore_all_output_modifiers(modifiers);
+                restore_all_output_modifiers(modifiers, locks);
             }
             break;
         }
@@ -593,13 +606,14 @@ static void process_action(struct input_device* device, struct layer* layer, int
             {
                 int length = 3 * action->data.ukeys_str.length;
                 uint8_t* codepoints = codepoint_strings[action->data.ukeys_str.codepoint_string_index];
+                uint8_t locks = unlock_all_output_modifiers();
                 uint8_t modifiers = release_all_output_modifiers();
                 for (int i = 0; i < length; i += 3)
                 {
                     if (!emit_codepoint(&codepoints[i])) break;
                     usleep(ukeys_delay);
                 }
-                restore_all_output_modifiers(modifiers);
+                restore_all_output_modifiers(modifiers, locks);
             }
             break;
         }
@@ -660,6 +674,180 @@ static void process_action(struct input_device* device, struct layer* layer, int
                         // Action timed-out, activate on repeat
                         activate_overload_mod(device, activation, activation->data.overload_mod.delayed_code, timestamp);
                     }
+                }
+            }
+            break;
+        }
+        case ACTION_LATCH_MOD:
+        {
+            // Ignore repeat events
+            if (IS_PRESS(value))
+            {
+                if (device->top_activation && device->top_activation->action == action)
+                {
+                    // Latch-mod key was pressed a second time
+                    device->top_activation->action = NULL;
+                    device->top_activation->code = code;
+                    // Convert to shifted to deactivate on release
+                    device->top_activation->data.latch_mod.shifted = 1;
+                }
+                else
+                {
+                    struct activation* activation = activate_layer(device, transparent_layer, ACTIVATION_LATCH_MOD, code);
+                    if (IS_MODIFIER_LOCKED(action->data.latch_mod.modifier_bit))
+                    {
+                        // Unlock modifier that was locked by another action
+                        locked_modifiers &= ~action->data.latch_mod.modifier_bit;
+                        // Convert to shifted to deactivate on release
+                        activation->data.latch_mod.shifted = 1;
+                    }
+                    else
+                    {
+                        emit(EV_KEY, action->data.latch_mod.modifier_code, 1);
+                    }
+                }
+            }
+            else if (IS_RELEASE(value))
+            {
+                struct activation* activation = find_activation_by_code(device, code);
+                if (activation != NULL)
+                {
+                    if (activation->data.latch_mod.shifted)
+                    {
+                        // Another key was pressed while modifier was held
+                        emit(EV_KEY, action->data.latch_mod.modifier_code, 0);
+                        deactivate_layer(device, activation);
+                    }
+                    else
+                    {
+                        // The modifier will be deactivated on the first key press
+                        activation->action = action;
+                        activation->code = 0;
+                    }
+                }
+            }
+            break;
+        }
+        case ACTION_LOCK_MOD:
+        {
+            // Ignore repeat events
+            if (IS_PRESS(value))
+            {
+                // Find a previous activation for this lock-mod action
+                struct activation* activation = FIND_ACTIVATION(device, activation->action == action);
+                if (activation != NULL)
+                {
+                    // Lock-mod key was pressed a second time
+                    device->top_activation->action = NULL;
+                    device->top_activation->code = code;
+                    // Convert to shifted to deactivate on release
+                    activation->data.lock_mod.shifted = 1;
+                }
+
+                if (IS_MODIFIER_LOCKED(action->data.lock_mod.modifier_bit))
+                {
+                    // Unlock modifier when key pressed a second time
+                    locked_modifiers &= ~action->data.lock_mod.modifier_bit;
+                }
+                else
+                {
+                    activate_layer(device, transparent_layer, ACTIVATION_LOCK_MOD, code);
+                    emit(EV_KEY, action->data.lock_mod.modifier_code, 1);
+                    // Lock modifier
+                    locked_modifiers |= action->data.lock_mod.modifier_bit;
+                }
+            }
+            else if (IS_RELEASE(value))
+            {
+                struct activation* activation = find_activation_by_code(device, code);
+                if (activation != NULL)
+                {
+                    if (activation->data.lock_mod.shifted)
+                    {
+                        // Unlock modifier
+                        locked_modifiers &= ~action->data.lock_mod.modifier_bit;
+                        // Another key was pressed while modifier was held, release modifier
+                        emit(EV_KEY, action->data.lock_mod.modifier_code, 0);
+                        deactivate_layer(device, activation);
+                    }
+                    else
+                    {
+                        // The modifier remains activated until unlocked
+                        activation->action = action;
+                        activation->code = 0;
+                    }
+                }
+                else
+                {
+                    // Press unlocked, release modifier key
+                    emit(EV_KEY, action->data.lock_mod.modifier_code, 0);
+                }
+            }
+            break;
+        }
+        case ACTION_LOCK_MOD_IF:
+        {
+            // Ignore repeat events
+            if (IS_PRESS(value))
+            {
+                if (IS_MODIFIER_LOCKED(action->data.lock_mod_if.modifier_bit))
+                {
+                    // Unlock modifier when key pressed a second time
+                    locked_modifiers &= ~action->data.lock_mod_if.modifier_bit;
+
+                    // Find a previous activation for this lock-if action
+                    struct activation* activation = FIND_ACTIVATION(device, activation->action == action);
+                    if (activation != NULL)
+                    {
+                        deactivate_layer(device, activation);
+                    }
+                }
+                else if (IS_MODIFIER_LOCKED(action->data.lock_mod_if.if_bit))
+                {
+                    // Unlock modifier when its if_code key is pressed a second time
+                    locked_modifiers &= ~action->data.lock_mod_if.if_bit;
+
+                    // Find a previous lock-if activation using if_code
+                    struct activation* activation = FIND_ACTIVATION(device, activation->data.lock_mod_if.if_code == code);
+                    if (activation != NULL)
+                    {
+                        if (activation->action != NULL)
+                        {
+                            // Modifier is not pressed, release it
+                            emit(EV_KEY, action->data.lock_mod_if.if_code, 0);
+                        }
+                        deactivate_layer(device, activation);
+                    }
+
+                    emit(EV_KEY, action->data.lock_mod_if.modifier_code, 1);
+                }
+                else
+                {
+                    if (device->pressed[action->data.lock_mod_if.if_code])
+                    {
+                        struct activation* activation = activate_layer(device, transparent_layer, ACTIVATION_LOCK_MOD_IF, code);
+                        activation->data.lock_mod_if.if_code = action->data.lock_mod_if.if_code;
+                        // Lock modifier if secondary key is pressed
+                        locked_modifiers |= action->data.lock_mod_if.modifier_bit;
+                    }
+                    emit(EV_KEY, action->data.lock_mod_if.modifier_code, 1);
+                }
+            }
+            else if (IS_RELEASE(value))
+            {
+                if (IS_MODIFIER_LOCKED(action->data.lock_mod_if.modifier_bit))
+                {
+                    struct activation* activation = find_activation_by_code(device, code);
+                    if (activation != NULL)
+                    {
+                        // The modifier remains activated until unlocked
+                        activation->action = action;
+                        activation->code = 0;
+                    }
+                }
+                else
+                {
+                    emit(EV_KEY, action->data.lock_mod_if.modifier_code, 0);
                 }
             }
             break;
@@ -893,6 +1081,18 @@ static void process_action(struct input_device* device, struct layer* layer, int
                         deactivate_layer(device, a);
                         a = prev;
                     }
+
+                    // Unlock and release all locked modifiers
+                    // Held modifier actions that locked modifiers will do nothing when released
+                    for (int i = 0; locked_modifiers; i++)
+                    {
+                        const uint8_t m = modifier_bit_list[i];
+                        if (locked_modifiers & m)
+                        {
+                            locked_modifiers &= ~m;
+                            emit(EV_KEY, modifier_key_list[i], 0);
+                        }
+                    }
                 }
                 else
                 {
@@ -1014,6 +1214,51 @@ void processKey(struct input_device* device, int type, int code, int value, stru
                     }
                 }
 
+                process_action(device, find_key_layer(device, code, value), code, value, timestamp);
+                break;
+            }
+            case ACTIVATION_LATCH_MOD:
+            {
+                struct layer* layer = find_key_layer(device, code, value);
+
+                if (IS_PRESS(value))
+                {
+                    struct action* action = activation->action;
+                    if (action != NULL)
+                    {
+                        // Latch-mod key was released and a key was pressed
+                        process_action(device, layer, code, value, timestamp);
+                        if (&layer->keymap[code] != action)
+                        {
+                            // Modifier will not be down on release, keys that trigger on release will not work properly when latched
+                            emit(EV_KEY, action->data.latch_mod.modifier_code, 0);
+                            deactivate_layer(device, activation);
+                        }
+                        return;
+                    }
+                    else
+                    {
+                        // A key was pressed before releasing latch-mod key, convert to shifted to deactivate on release
+                        activation->data.latch_mod.shifted = 1;
+                    }
+                }
+
+                process_action(device, layer, code, value, timestamp);
+                break;
+            }
+            case ACTIVATION_LOCK_MOD:
+            {
+                if (IS_PRESS(value) && activation->action == NULL)
+                {
+                    // A key was pressed before releasing lock-mod key, convert to shifted to deactivate on release
+                    activation->data.lock_mod.shifted = 1;
+                }
+
+                process_action(device, find_key_layer(device, code, value), code, value, timestamp);
+                break;
+            }
+            case ACTIVATION_LOCK_MOD_IF:
+            {
                 process_action(device, find_key_layer(device, code, value), code, value, timestamp);
                 break;
             }
