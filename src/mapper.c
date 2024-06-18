@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "config.h"
+#include "beep.h"
 #include "buffers.h"
 #include "emit.h"
 #include "keys.h"
@@ -411,6 +412,10 @@ static int emit_codepoint(uint8_t* bytes)
             {
                 emit_codepoint_to_keycode(codepoint);
             }
+            else if (beep_on_invalid_codepoint_frequency)
+            {
+                beep(beep_on_invalid_codepoint_frequency, beep_on_invalid_codepoint_duration_ms);
+            }
             break;
         }
         case input_method_compose:
@@ -533,7 +538,14 @@ static void process_action(struct input_device* device, struct layer* layer, int
             error("error: the service did not properly pass-through transparent key '%s' before calling process_action()\n", convertKeyCodeToString(code));
             break;
         }
-        case ACTION_DISABLED: break;
+        case ACTION_DISABLED:
+        {
+            if (beep_on_disabled_press_frequency)
+            {
+                beep(beep_on_disabled_press_frequency, beep_on_disabled_press_duration_ms);
+            }
+            break;
+        }
         case ACTION_KEY:
         {
             emit(EV_KEY, action->data.key.code, value);
@@ -757,7 +769,11 @@ static void process_action(struct input_device* device, struct layer* layer, int
                 {
                     activate_layer(device, layout_layer->menu_layer, ACTIVATION_LATCH_LAYER, code);
                 }
-                // Do nothing if not found
+                else if (beep_on_disabled_press_frequency)
+                {
+                    // Beep if not found
+                    beep(beep_on_disabled_press_frequency, beep_on_disabled_press_duration_ms);
+                }
             }
             else if (IS_RELEASE(value))
             {
