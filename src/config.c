@@ -19,8 +19,7 @@ struct input_device input_devices[MAX_DEVICES];
 int nr_input_devices;
 
 int hyperKey;
-struct key_output keymap[MAX_KEYMAP] = { 0 };
-int remap[MAX_KEYMAP] = { 0 };
+struct key_output hyper_keymap[MAX_KEYMAP];
 
 /**
  * Checks for the device number if it is configured.
@@ -111,9 +110,12 @@ int read_configuration()
     // Clear existing hyper key
     hyperKey = 0;
 
-    // Zero the existing arrays
-    memset(keymap, 0, sizeof(keymap));
+    // Zero the temporary array
+    int remap[MAX_KEYMAP];
     memset(remap, 0, sizeof(remap));
+
+    // Zero the existing array
+    memset(hyper_keymap, 0, sizeof(hyper_keymap));
 
     // Open the configuration file
     FILE* configuration_file = fopen(configuration_file_path, "r");
@@ -179,13 +181,9 @@ int read_configuration()
             {
                 char* name = line;
                 int number = get_device_number(name);
-                struct input_device* device = &input_devices[nr_input_devices];
-                strcpy(device->name, name);
-                device->number = number;
-                device->event_path[0] = '\0';
-                device->file_descriptor = -1;
+                struct input_device* device = registerInputDevice(lineno, name, number);
+                if (device == NULL) continue;
                 find_device_event_path(device);
-                nr_input_devices++;
                 break;
             }
             case configuration_remap:
@@ -208,6 +206,11 @@ int read_configuration()
                 if (toCode == 0)
                 {
                     error("error[%d]: invalid key: expected a single key: %s\n", lineno, token);
+                    continue;
+                }
+                if (toCode > MAX_KEYMAP_CODE)
+                {
+                    error("error[%d]: right key code must be less than %d: %s\n", lineno, MAX_KEYMAP, token);
                     continue;
                 }
                 remap[fromCode] = toCode;
@@ -261,7 +264,7 @@ int read_configuration()
                         error("error[%d]: invalid key: expected a single key or comma separated list of keys: %s\n", lineno, token);
                         continue;
                     }
-                    keymap[fromCode].sequence[index++] = toCode;
+                    hyper_keymap[fromCode].sequence[index++] = toCode;
                 }
                 break;
             }
@@ -282,7 +285,96 @@ int read_configuration()
     {
         free(buffer);
     }
+
+    for (int d = 0; d < nr_input_devices; d++)
+    {
+        finalizeInputDevice(&input_devices[d], remap);
+    }
+
+    // Remap bindings and hyper key
+    remapBindings(remap);
+    hyperKey = remap[hyperKey] != 0 ? remap[hyperKey] : hyperKey;
+
     return EXIT_SUCCESS;
+}
+
+/**
+ * Register an input device.
+ */
+struct input_device* registerInputDevice(int lineno, const char* name, int number)
+{
+    for (int d = 0; d < nr_input_devices; d++)
+    {
+        if (number == input_devices[d].number && strcmp(name, input_devices[d].name) == 0)
+        {
+            error("error[%d]: duplicate input devices: %s:%i\n", lineno, name, number);
+            return NULL;
+        }
+    }
+
+    struct input_device* device = &input_devices[nr_input_devices];
+    strcpy(device->name, name);
+    device->number = number;
+    device->event_path[0] = '\0';
+    device->file_descriptor = -1;
+    memset(device->remap, 0, sizeof(device->remap));
+
+    nr_input_devices++;
+
+    return device;
+}
+
+/**
+ * Finalize the remap array in an input device.
+ */
+void finalizeInputDevice(struct input_device* device, int* remap)
+{
+    // Each device inherits the global remap array
+    for (int r = 0; r < MAX_KEYMAP; r++)
+    {
+        // Per-device remapping
+        if (device->remap[r] != 0) continue;
+
+        if (remap[r] != 0)
+        {
+            // Inherit
+            device->remap[r] = remap[r];
+        }
+        else
+        {
+            // Pass-through
+            device->remap[r] = r;
+        }
+    }
+}
+
+/**
+ * Remap bindings to maintain compatibility with existing [Bindings].
+ */
+void remapBindings(int* remap)
+{
+    // This allows bindings in layers to be specified using the remapped keys.
+    // While existing [Bindings] continue to work with the unremapped keys.
+
+    struct key_output keymap[MAX_KEYMAP];
+    memset(keymap, 0, sizeof(keymap));
+
+    // Remap bindings
+    for (int b = 0; b < MAX_KEYMAP; b++)
+    {
+        int rb = remap[b] != 0 ? remap[b] : b;
+        for (int s = 0; s < MAX_SEQUENCE; s++)
+        {
+            int c = hyper_keymap[b].sequence[s];
+            if (c == 0) break;
+            keymap[rb].sequence[s] = c;
+        }
+    }
+
+    for (int b = 0; b < MAX_KEYMAP; b++)
+    {
+        hyper_keymap[b] = keymap[b];
+    }
 }
 
 /**

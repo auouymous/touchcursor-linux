@@ -22,6 +22,9 @@ static char output[256];
 // String for the emit function output
 static char emitString[8];
 
+// An input device for testing
+struct input_device* test_device;
+
 /*
  * Override of the emit function(s).
  */
@@ -105,16 +108,16 @@ static int type(char* keys, char* expect)
 
         if (strcmp(action, "down") == 0)
         {
-            processKey(EV_KEY, code, 1);
+            processKey(test_device, EV_KEY, code, 1);
         }
         else if (strcmp(action, "up") == 0)
         {
-            processKey(EV_KEY, code, 0);
+            processKey(test_device, EV_KEY, code, 0);
         }
         else if (strcmp(action, "tap") == 0)
         {
-            processKey(EV_KEY, code, 1);
-            processKey(EV_KEY, code, 0);
+            processKey(test_device, EV_KEY, code, 1);
+            processKey(test_device, EV_KEY, code, 0);
         }
         else
         {
@@ -235,8 +238,7 @@ static void testNormalTyping()
 
     TYPE("mr2 tap", EXPECT, "m2 tap");
 
-    // Key is not remapped in hyper mode
-    TYPE("hyper down, mr2 tap, hyper up", EXPECT, "layer_mr2 tap");
+    TYPE("hyper down, mr2 tap, hyper up", EXPECT, "layer_m2 tap");
 }
 
 /*
@@ -281,22 +283,33 @@ static void testSpecialTyping()
  */
 int main()
 {
+    test_device = registerInputDevice(0, "test", 1);
+
+    int remap[MAX_KEYMAP];
+    memset(remap, 0, sizeof(remap));
+
+    memset(hyper_keymap, 0, sizeof(hyper_keymap));
+
     // default config
     hyperKey = KEY("hyper");
-    keymap[KEY("m1")].sequence[0] = KEY("layer_m1");
-    keymap[KEY("m2")].sequence[0] = KEY("layer_m2");
-    keymap[KEY("m3")].sequence[0] = KEY("layer_m3");
+    hyper_keymap[KEY("m1")].sequence[0] = KEY("layer_m1");
+    hyper_keymap[KEY("m2")].sequence[0] = KEY("layer_m2");
+    hyper_keymap[KEY("m3")].sequence[0] = KEY("layer_m3");
 
-    keymap[KEY("seq")].sequence[0] = KEY("seq1");
-    keymap[KEY("seq")].sequence[1] = KEY("seq2");
-    keymap[KEY("lseq")].sequence[0] = KEY("seq1");
-    keymap[KEY("lseq")].sequence[1] = KEY("seq2");
-    keymap[KEY("lseq")].sequence[2] = KEY("seq3");
-    keymap[KEY("lseq")].sequence[3] = KEY("seq4");
+    hyper_keymap[KEY("seq")].sequence[0] = KEY("seq1");
+    hyper_keymap[KEY("seq")].sequence[1] = KEY("seq2");
+    hyper_keymap[KEY("lseq")].sequence[0] = KEY("seq1");
+    hyper_keymap[KEY("lseq")].sequence[1] = KEY("seq2");
+    hyper_keymap[KEY("lseq")].sequence[2] = KEY("seq3");
+    hyper_keymap[KEY("lseq")].sequence[3] = KEY("seq4");
 
     remap[KEY("or1")] = KEY("other");
     remap[KEY("mr2")] = KEY("m2");
-    keymap[KEY("mr2")].sequence[0] = KEY("layer_mr2");
+    hyper_keymap[KEY("mr2")].sequence[0] = KEY("layer_mr2");
+
+    finalizeInputDevice(test_device, remap);
+
+    remapBindings(remap);
 
     testNormalTyping();
     testFastTyping();

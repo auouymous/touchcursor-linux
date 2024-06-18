@@ -23,19 +23,27 @@ static int isHyper(int code)
 }
 
 /**
- * Checks if the key has been mapped.
- * */
-static int isMapped(int code)
+ * Lookup a key sequence for an input device.
+ */
+static struct key_output find_key_output(struct input_device* device, int code)
 {
-    return keymap[code].sequence[0] != 0;
+    return hyper_keymap[code];
 }
 
 /**
- * Sends a mapped key sequence.
+ * Checks if the key has been mapped.
  * */
-static void send_mapped_key(int code, int value)
+static int isMapped(struct input_device* device, int code)
 {
-    struct key_output output = keymap[code];
+    return find_key_output(device, code).sequence[0] != 0;
+}
+
+/**
+ * Sends a hyper layer key sequence.
+ * */
+static void send_layer_key(struct input_device* device, int code, int value)
+{
+    struct key_output output = find_key_output(device, code);
     for (int i = 0; i < MAX_SEQUENCE; i++)
     {
         if (output.sequence[i] == 0)
@@ -51,26 +59,22 @@ static void send_mapped_key(int code, int value)
 }
 
 /**
- * Sends all keys in the queue.
+ * Sends all keys in the hyper queue.
  * */
-static void send_mapped_queue(int value)
+static void send_layer_queue(struct input_device* device, int value)
 {
     int length = lengthOfQueue();
     for (int i = 0; i < length; i++)
     {
-        send_mapped_key(dequeue(), value);
+        send_layer_key(device, dequeue(), value);
     }
 }
 
 /**
- * Sends a remapped key.
+ * Sends a default key.
  * */
-static void send_remapped_key(int code, int value)
+static void send_default_key(int code, int value)
 {
-    if (remap[code] != 0)
-    {
-        code = remap[code];
-    }
     emit(EV_KEY, code, value);
     if (value == 0)
     {
@@ -79,22 +83,24 @@ static void send_remapped_key(int code, int value)
 }
 
 /**
- * Sends all keys in the queue.
+ * Sends all keys in the default queue.
  * */
-static void send_remapped_queue(int value)
+static void send_default_queue(int value)
 {
     int length = lengthOfQueue();
     for (int i = 0; i < length; i++)
     {
-        send_remapped_key(dequeue(), value);
+        send_default_key(dequeue(), value);
     }
 }
 
 /**
  * Processes a key input event. Converts and emits events as necessary.
  * */
-void processKey(int type, int code, int value)
+void processKey(struct input_device* device, int type, int code, int value)
 {
+    code = device->remap[code];
+
     /* printf("processKey(in): code=%i value=%i state=%i\n", code, value, state); */
     switch (state)
     {
@@ -108,7 +114,7 @@ void processKey(int type, int code, int value)
             }
             else
             {
-                send_remapped_key(code, value);
+                send_default_key(code, value);
             }
             break;
         }
@@ -121,12 +127,12 @@ void processKey(int type, int code, int value)
                     state = idle;
                     if (!hyperEmitted)
                     {
-                        send_remapped_key(code, 1);
+                        send_default_key(code, 1);
                     }
-                    send_remapped_key(code, 0);
+                    send_default_key(code, 0);
                 }
             }
-            else if (isMapped(code))
+            else if (isMapped(device, code))
             {
                 if (isDown(value))
                 {
@@ -135,7 +141,7 @@ void processKey(int type, int code, int value)
                 }
                 else
                 {
-                    send_remapped_key(code, value);
+                    send_default_key(code, value);
                 }
             }
             else
@@ -144,11 +150,11 @@ void processKey(int type, int code, int value)
                 {
                     if (!hyperEmitted)
                     {
-                        send_remapped_key(hyperKey, 1);
+                        send_default_key(hyperKey, 1);
                         hyperEmitted = 1;
                     }
                 }
-                send_remapped_key(code, value);
+                send_default_key(code, value);
             }
             break;
         }
@@ -161,34 +167,34 @@ void processKey(int type, int code, int value)
                     state = idle;
                     if (!hyperEmitted)
                     {
-                        send_remapped_key(hyperKey, 1);
+                        send_default_key(hyperKey, 1);
                     }
-                    send_remapped_queue(1);
-                    send_remapped_key(hyperKey, 0);
+                    send_default_queue(1);
+                    send_default_key(hyperKey, 0);
                 }
             }
-            else if (isMapped(code))
+            else if (isMapped(device, code))
             {
                 state = map;
                 if (isDown(value))
                 {
                     if (lengthOfQueue() != 0)
                     {
-                        send_mapped_key(peek(), 1);
+                        send_layer_key(device, peek(), 1);
                     }
                     enqueue(code);
-                    send_mapped_key(code, value);
+                    send_layer_key(device, code, value);
                 }
                 else
                 {
-                    send_mapped_queue(1);
-                    send_mapped_key(code, value);
+                    send_layer_queue(device, 1);
+                    send_layer_key(device, code, value);
                 }
             }
             else
             {
                 state = map;
-                send_remapped_key(code, value);
+                send_default_key(code, value);
             }
             break;
         }
@@ -199,20 +205,20 @@ void processKey(int type, int code, int value)
                 if (!isDown(value))
                 {
                     state = idle;
-                    send_mapped_queue(0);
+                    send_layer_queue(device, 0);
                 }
             }
-            else if (isMapped(code))
+            else if (isMapped(device, code))
             {
                 if (isDown(value))
                 {
                     enqueue(code);
                 }
-                send_mapped_key(code, value);
+                send_layer_key(device, code, value);
             }
             else
             {
-                send_remapped_key(code, value);
+                send_default_key(code, value);
             }
             break;
         }

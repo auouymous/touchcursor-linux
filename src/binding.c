@@ -228,7 +228,7 @@ void read_inputs()
                 if (event.type == EV_KEY
                     && (event.value == 0 || event.value == 1 || event.value == 2))
                 {
-                    processKey(event.type, event.code, event.value);
+                    processKey(device, event.type, event.code, event.value);
                 }
                 else
                 {
