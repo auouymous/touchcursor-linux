@@ -219,7 +219,7 @@ static void testNormalTyping()
 
     TYPE("other down, hyper tap, other up", EXPECT, "other down, hyper tap, other up");
 
-    TYPE("hyper down, other tap, hyper up", EXPECT, "hyper down, other tap, hyper up");
+    TYPE("hyper down, other tap, hyper up", EXPECT, "other tap");
 
     TYPE("m1 down, hyper tap, m1 up", EXPECT, "m1 down, hyper tap, m1 up");
 
@@ -234,7 +234,7 @@ static void testNormalTyping()
 
     TYPE("or1 tap", EXPECT, "other tap");
 
-    TYPE("hyper down, or1 tap, hyper up", EXPECT, "hyper down, other tap, hyper up");
+    TYPE("hyper down, or1 tap, hyper up", EXPECT, "other tap");
 
     TYPE("mr2 tap", EXPECT, "m2 tap");
 

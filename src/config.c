@@ -318,6 +318,7 @@ struct input_device* registerInputDevice(int lineno, const char* name, int numbe
     device->event_path[0] = '\0';
     device->file_descriptor = -1;
     memset(device->remap, 0, sizeof(device->remap));
+    memset(device->keymap, 0, sizeof(device->keymap));
 
     nr_input_devices++;
 
@@ -325,10 +326,19 @@ struct input_device* registerInputDevice(int lineno, const char* name, int numbe
 }
 
 /**
- * Finalize the remap array in an input device.
+ * Finalize the keymap and remap arrays in an input device.
  */
 void finalizeInputDevice(struct input_device* device, int* remap)
 {
+    // Initialize all unset bindings
+    for (int k = 0; k < MAX_KEYMAP; k++)
+    {
+        if (device->keymap[k].sequence[0] == 0)
+        {
+            device->keymap[k].sequence[0] = k;
+        }
+    }
+
     // Each device inherits the global remap array
     for (int r = 0; r < MAX_KEYMAP; r++)
     {

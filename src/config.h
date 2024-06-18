@@ -35,6 +35,7 @@ struct input_device
     char event_path[256];
     int file_descriptor;
     int remap[MAX_KEYMAP];
+    struct key_output keymap[MAX_KEYMAP];
 };
 extern struct input_device input_devices[MAX_DEVICES];
 extern int nr_input_devices;
@@ -60,7 +61,7 @@ int read_configuration();
 struct input_device* registerInputDevice(int lineno, const char* name, int number);
 
 /**
- * Finalize the remap array in an input device.
+ * Finalize the keymap and remap arrays in an input device.
  */
 void finalizeInputDevice(struct input_device* device, int* remap);
 

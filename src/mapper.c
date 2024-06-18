@@ -8,34 +8,15 @@
 #include "mapper.h"
 #include "queue.h"
 
-// The state machine state
-enum states state = idle;
-
-// Flag if the hyper key has been emitted
-static int hyperEmitted;
-
-/**
- * Checks if the key is the hyper key.
- * */
-static int isHyper(int code)
-{
-    return code == hyperKey;
-}
+static int hyperDown = 0;
+static int hyperActive = 0;
 
 /**
  * Lookup a key sequence for an input device.
  */
 static struct key_output find_key_output(struct input_device* device, int code)
 {
-    return hyper_keymap[code];
-}
-
-/**
- * Checks if the key has been mapped.
- * */
-static int isMapped(struct input_device* device, int code)
-{
-    return find_key_output(device, code).sequence[0] != 0;
+    return hyper_keymap[code].sequence[0] != 0 ? hyper_keymap[code] : device->keymap[code];
 }
 
 /**
@@ -52,7 +33,7 @@ static void send_layer_key(struct input_device* device, int code, int value)
         }
         emit(EV_KEY, output.sequence[i], value);
     }
-    if (value == 0)
+    if (IS_RELEASE(value))
     {
         removeKeyFromQueue(code);
     }
@@ -76,7 +57,7 @@ static void send_layer_queue(struct input_device* device, int value)
 static void send_default_key(int code, int value)
 {
     emit(EV_KEY, code, value);
-    if (value == 0)
+    if (IS_RELEASE(value))
     {
         removeKeyFromQueue(code);
     }
@@ -95,133 +76,114 @@ static void send_default_queue(int value)
 }
 
 /**
+ * Process a hyper key event.
+ * */
+static void process_hyper(struct input_device* device, int code, int value)
+{
+    // Ignore repeat events
+    if (IS_PRESS(value))
+    {
+        hyperDown = 1;
+        hyperActive = 0;
+        clearQueue();
+    }
+    else if (IS_RELEASE(value))
+    {
+        hyperDown = 0;
+        if (hyperActive)
+        {
+            // Flush hyper layer queue
+            send_layer_queue(device, 0);
+            hyperActive = 0;
+        }
+        else
+        {
+            // Send hyper key and delayed key code, if one
+            send_default_key(hyperKey, 1);
+            send_default_queue(1);
+            send_default_key(hyperKey, 0);
+        }
+    }
+}
+
+/**
+ * Process a key action.
+ * */
+static void process_action(struct input_device* device, int code, int value)
+{
+    if (code == hyperKey)
+    {
+        process_hyper(device, code, value);
+    }
+    else
+    {
+        send_default_key(code, value);
+    }
+}
+
+/**
  * Processes a key input event. Converts and emits events as necessary.
  * */
 void processKey(struct input_device* device, int type, int code, int value)
 {
     code = device->remap[code];
 
-    /* printf("processKey(in): code=%i value=%i state=%i\n", code, value, state); */
-    switch (state)
+    if (!hyperDown)
     {
-        case idle: // 0
-        {
-            if (isHyper(code) && isDown(value))
-            {
-                state = hyper;
-                hyperEmitted = 0;
-                clearQueue();
-            }
-            else
-            {
-                send_default_key(code, value);
-            }
-            break;
-        }
-        case hyper: // 1
-        {
-            if (isHyper(code))
-            {
-                if (!isDown(value))
-                {
-                    state = idle;
-                    if (!hyperEmitted)
-                    {
-                        send_default_key(code, 1);
-                    }
-                    send_default_key(code, 0);
-                }
-            }
-            else if (isMapped(device, code))
-            {
-                if (isDown(value))
-                {
-                    state = delay;
-                    enqueue(code);
-                }
-                else
-                {
-                    send_default_key(code, value);
-                }
-            }
-            else
-            {
-                if (!isModifier(code) && isDown(value))
-                {
-                    if (!hyperEmitted)
-                    {
-                        send_default_key(hyperKey, 1);
-                        hyperEmitted = 1;
-                    }
-                }
-                send_default_key(code, value);
-            }
-            break;
-        }
-        case delay: // 2
-        {
-            if (isHyper(code))
-            {
-                if (!isDown(value))
-                {
-                    state = idle;
-                    if (!hyperEmitted)
-                    {
-                        send_default_key(hyperKey, 1);
-                    }
-                    send_default_queue(1);
-                    send_default_key(hyperKey, 0);
-                }
-            }
-            else if (isMapped(device, code))
-            {
-                state = map;
-                if (isDown(value))
-                {
-                    if (lengthOfQueue() != 0)
-                    {
-                        send_layer_key(device, peek(), 1);
-                    }
-                    enqueue(code);
-                    send_layer_key(device, code, value);
-                }
-                else
-                {
-                    send_layer_queue(device, 1);
-                    send_layer_key(device, code, value);
-                }
-            }
-            else
-            {
-                state = map;
-                send_default_key(code, value);
-            }
-            break;
-        }
-        case map: // 3
-        {
-            if (isHyper(code))
-            {
-                if (!isDown(value))
-                {
-                    state = idle;
-                    send_layer_queue(device, 0);
-                }
-            }
-            else if (isMapped(device, code))
-            {
-                if (isDown(value))
-                {
-                    enqueue(code);
-                }
-                send_layer_key(device, code, value);
-            }
-            else
-            {
-                send_default_key(code, value);
-            }
-            break;
-        }
+        process_action(device, code, value);
     }
-    /* printf("processKey(out): state=%i\n", state); */
+    else if (code == hyperKey)
+    {
+        // Repeat or release hyper key
+        process_hyper(device, code, value);
+    }
+    else if (isModifier(code) && hyper_keymap[code].sequence[0] == 0)
+    {
+        // Handle modifier here if not mapped, to avoid activating the hyper layer
+        send_default_key(code, value);
+    }
+    else
+    {
+        // The hyper key is down and event key is not the hyper key
+        if (IS_PRESS(value))
+        {
+            // Key press
+            if (!hyperActive)
+            {
+                if (lengthOfQueue() == 0)
+                {
+                    // Queue and delay first key press after pressing the hyper key
+                    enqueue(code);
+                    return;
+                }
+
+                // A second key press activates the hyper layer
+                hyperActive = 1;
+                // Send press event for delayed key code
+                send_layer_key(device, peek(), 1);
+            }
+
+            // Queue key press
+            enqueue(code);
+        }
+        else
+        {
+            // Key repeat or release
+            if (!inQueue(code))
+            {
+                // A key that was pressed before the hyper key was pressed
+                send_default_key(code, value);
+                return;
+            }
+            if (!hyperActive)
+            {
+                // Delayed key was repeated or released, activate the hyper layer
+                hyperActive = 1;
+                // Send press event for delayed key code
+                send_layer_key(device, peek(), 1);
+            }
+        }
+
+        send_layer_key(device, code, value);
+    }
 }

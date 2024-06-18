@@ -77,6 +77,21 @@ int peek()
 }
 
 /**
+ * Returns true if value is in the queue.
+ * */
+int inQueue(int code)
+{
+    for (int i = head; i != tail; i = (i + 1) % length)
+    {
+        if (store[i] == code)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
  * Remove key from the queue.
  * */
 void removeKeyFromQueue(int value)

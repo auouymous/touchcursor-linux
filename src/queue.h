@@ -27,6 +27,11 @@ int dequeue();
 int peek();
 
 /**
+ * Returns true if value is in the queue.
+ * */
+int inQueue(int code);
+
+/**
  * Remove key from the queue.
  * */
 void removeKeyFromQueue(int value);

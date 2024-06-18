@@ -26,15 +26,9 @@ void outputKeyList();
  * */
 int convertKeyStringToCode(char* keyString);
 
-/**
- * Checks if the event is a key down.
- * */
-int isDown(int value);
-
-/**
- * Checks if the key is a keypad key.
- * */
-int isKeypad(int code);
+#define IS_PRESS(value) (value == 1)
+#define IS_REPEAT(value) (value == 2)
+#define IS_RELEASE(value) (value == 0)
 
 /**
  * Checks if the key is a modifier key.
