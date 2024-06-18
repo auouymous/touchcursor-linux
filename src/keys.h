@@ -35,4 +35,38 @@ int convertKeyStringToCode(char* keyString);
  * */
 int isModifier(int code);
 
+#define MOD_LEFTSHIFT  ((uint8_t)0x01)
+#define MOD_RIGHTSHIFT ((uint8_t)0x02)
+#define MOD_LEFTCTRL   ((uint8_t)0x04)
+#define MOD_RIGHTCTRL  ((uint8_t)0x08)
+#define MOD_LEFTALT    ((uint8_t)0x10)
+#define MOD_RIGHTALT   ((uint8_t)0x20)
+#define MOD_LEFTMETA   ((uint8_t)0x40)
+#define MOD_RIGHTMETA  ((uint8_t)0x80)
+
+#define MOD_SHIFT ((uint8_t)0x03)
+#define MOD_CTRL  ((uint8_t)0x0C)
+#define MOD_ALT   ((uint8_t)0x30)
+#define MOD_META  ((uint8_t)0xC0)
+
+/**
+ * Modifier key list.
+ * */
+extern const uint16_t modifier_key_list[];
+
+/**
+ * Modifier bit list.
+ * */
+extern const uint8_t modifier_bit_list[];
+
+/**
+ * Output modifier states.
+ * */
+extern uint8_t output_modifier_states;
+
+/**
+ * Toggle output modifier state.
+ * */
+void toggleOutputModifierState(int code, int value);
+
 #endif

@@ -30,6 +30,8 @@ struct input_device* test_device;
  */
 void emit(int type, int code, int value)
 {
+    toggleOutputModifierState(code, value);
+
     sprintf(emitString, "%i:%i ", code, value);
     strcat(output, emitString);
 }

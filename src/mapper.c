@@ -162,6 +162,40 @@ static void emit_key_sequence(unsigned int max, uint16_t* sequence, int value)
 }
 
 /**
+ * Release all output modifier keys and return bitmask to restore.
+ * */
+static uint8_t release_all_output_modifiers()
+{
+    uint8_t mods = output_modifier_states;
+    for (int i = 0; output_modifier_states; i++)
+    {
+        const uint8_t m = modifier_bit_list[i];
+        if (output_modifier_states & m)
+        {
+            emit(EV_KEY, modifier_key_list[i], 0);
+            output_modifier_states &= ~m;
+        }
+    }
+    return mods;
+}
+
+/**
+ * Restore all output modifier keys.
+ * */
+static void restore_all_output_modifiers(uint8_t modifiers)
+{
+    for (int i = 0; modifiers; i++)
+    {
+        const uint8_t m = modifier_bit_list[i];
+        if (modifiers & m)
+        {
+            emit(EV_KEY, modifier_key_list[i], 1);
+            modifiers &= ~m;
+        }
+    }
+}
+
+/**
  * Check if timeout has expired.
  * */
 static int timeout_has_expired(struct timeval timestamp, struct timeval activation_timeout_timestamp)

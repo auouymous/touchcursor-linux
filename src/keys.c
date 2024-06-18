@@ -1,4 +1,5 @@
 #include <linux/uinput.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -599,5 +600,75 @@ int isModifier(int code)
         {
             return 0;
         }
+    }
+}
+
+/**
+ * Modifier key list.
+ * */
+const uint16_t modifier_key_list[] = {
+    KEY_LEFTSHIFT,
+    KEY_RIGHTSHIFT,
+    KEY_LEFTCTRL,
+    KEY_RIGHTCTRL,
+    KEY_LEFTALT,
+    KEY_RIGHTALT,
+    KEY_LEFTMETA,
+    KEY_RIGHTMETA,
+};
+
+/**
+ * Modifier bit list.
+ * */
+const uint8_t modifier_bit_list[] = {
+    MOD_LEFTSHIFT,
+    MOD_RIGHTSHIFT,
+    MOD_LEFTCTRL,
+    MOD_RIGHTCTRL,
+    MOD_LEFTALT,
+    MOD_RIGHTALT,
+    MOD_LEFTMETA,
+    MOD_RIGHTMETA,
+};
+
+/**
+ * Output modifier states.
+ * */
+uint8_t output_modifier_states = 0;
+
+static void set_output_modifier(uint8_t name, int value)
+{
+    switch (value)
+    {
+        case 1:
+        {
+            output_modifier_states |= name;
+            break;
+        }
+        case 0:
+        {
+            output_modifier_states &= ~name;
+            break;
+        }
+        default: break; // repeat
+    }
+}
+
+/**
+ * Toggle output modifier state.
+ * */
+void toggleOutputModifierState(int code, int value)
+{
+    switch (code)
+    {
+        case KEY_LEFTSHIFT: return set_output_modifier(MOD_LEFTSHIFT, value);
+        case KEY_RIGHTSHIFT: return set_output_modifier(MOD_RIGHTSHIFT, value);
+        case KEY_LEFTCTRL: return set_output_modifier(MOD_LEFTCTRL, value);
+        case KEY_RIGHTCTRL: return set_output_modifier(MOD_RIGHTCTRL, value);
+        case KEY_LEFTALT: return set_output_modifier(MOD_LEFTALT, value);
+        case KEY_RIGHTALT: return set_output_modifier(MOD_RIGHTALT, value);
+        case KEY_LEFTMETA: return set_output_modifier(MOD_LEFTMETA, value);
+        case KEY_RIGHTMETA: return set_output_modifier(MOD_RIGHTMETA, value);
+        default: break;
     }
 }

@@ -5,12 +5,15 @@
 
 #include "binding.h"
 #include "emit.h"
+#include "keys.h"
 
 /**
  * Emits a key event.
  * */
 void emit(int type, int code, int value)
 {
+    toggleOutputModifierState(code, value);
+
     if (type == EV_KEY)
     {
         // TODO: I don't like this here
