@@ -1,5 +1,5 @@
 // build
-// gcc -Wall src/queue.c src/keys.c src/strings.c src/binding.c src/config.c src/mapper.c src/test.c -o out/test
+// gcc -Wall src/keys.c src/strings.c src/binding.c src/config.c src/mapper.c src/test.c -o out/test
 // run
 // ./out/test
 
@@ -56,7 +56,7 @@ static struct test_keys test_keys[] = {
     {KEY_R, "or1"}, {KEY_O, "or1_to"}, // other remap
     {KEY_E, "mr2"}, {KEY_K, "mr2_to"}, {KEY_5, "layer_mr2"}, // mapped remap
 
-    {KEY_SPACE, "hyper"},
+    {KEY_SPACE, "overload"},
 
     {0, NULL}
 };
@@ -213,32 +213,32 @@ static void testNormalTyping()
 {
     printf("Normal typing tests...\n");
 
-    TYPE("hyper tap", EXPECT, "hyper tap");
+    TYPE("overload tap", EXPECT, "overload tap");
 
-    TYPE("hyper tap, hyper tap", EXPECT, "hyper tap, hyper tap");
+    TYPE("overload tap, overload tap", EXPECT, "overload tap, overload tap");
 
-    TYPE("other down, hyper tap, other up", EXPECT, "other down, hyper tap, other up");
+    TYPE("other down, overload tap, other up", EXPECT, "other down, overload tap, other up");
 
-    TYPE("hyper down, other tap, hyper up", EXPECT, "other tap");
+    TYPE("overload down, other tap, overload up", EXPECT, "other tap");
 
-    TYPE("m1 down, hyper tap, m1 up", EXPECT, "m1 down, hyper tap, m1 up");
+    TYPE("m1 down, overload tap, m1 up", EXPECT, "m1 down, overload tap, m1 up");
 
-    TYPE("hyper down, m1 tap, hyper up", EXPECT, "layer_m1 tap");
+    TYPE("overload down, m1 tap, overload up", EXPECT, "layer_m1 tap");
 
-    TYPE("m1 down, hyper tap, m2 tap, m1 up", EXPECT, "m1 down, hyper tap, m2 tap, m1 up");
+    TYPE("m1 down, overload tap, m2 tap, m1 up", EXPECT, "m1 down, overload tap, m2 tap, m1 up");
 
-    TYPE("hyper down, seq tap, hyper up", EXPECT, "seq1 down, seq2 down, seq1 up, seq2 up");
+    TYPE("overload down, seq tap, overload up", EXPECT, "seq1 down, seq2 down, seq1 up, seq2 up");
 
-    TYPE("hyper down, lseq tap, hyper up",
+    TYPE("overload down, lseq tap, overload up",
         EXPECT, "seq1 down, seq2 down, seq3 down, seq4 down, seq1 up, seq2 up, seq3 up, seq4 up");
 
     TYPE("or1 tap", EXPECT, "other tap");
 
-    TYPE("hyper down, or1 tap, hyper up", EXPECT, "other tap");
+    TYPE("overload down, or1 tap, overload up", EXPECT, "other tap");
 
     TYPE("mr2 tap", EXPECT, "m2 tap");
 
-    TYPE("hyper down, mr2 tap, hyper up", EXPECT, "layer_m2 tap");
+    TYPE("overload down, mr2 tap, overload up", EXPECT, "layer_m2 tap");
 }
 
 /*
@@ -250,20 +250,18 @@ static void testFastTyping()
     printf("Fast typing tests...\n");
 
     // The mapped key should not be converted
-    TYPE("hyper down, m1 down, hyper up, m1 up", EXPECT, "hyper down, m1 down, hyper up, m1 up");
+    TYPE("overload down, m1 down, overload up, m1 up", EXPECT, "overload down, m1 down, overload up, m1 up");
 
     // The mapped key should not be converted
     // This is not out of order, remember space down does not emit anything
-    TYPE("m1 down, hyper down, m1 up, hyper up", EXPECT, "m1 tap, hyper tap");
+    TYPE("m1 down, overload down, m1 up, overload up", EXPECT, "m1 tap, overload tap");
 
     // The mapped keys should be sent converted
-    // Extra up events are sent, but that does not matter
-    TYPE("hyper down, m1 down, m2 down, hyper up, m1 up, m2 up", EXPECT, "layer_m1 down, layer_m2 down, layer_m1 up, layer_m2 up, m1 up, m2 up");
+    TYPE("overload down, m1 down, m2 down, overload up, m1 up, m2 up", EXPECT, "layer_m1 down, layer_m2 down, layer_m1 up, layer_m2 up");
 
     // The mapped keys should be sent converted
-    // Extra up events are sent, but that does not matter
-    TYPE("hyper down, m1 down, m2 down, m3 down, hyper up, m1 up, m2 up, m3 up",
-        EXPECT, "layer_m1 down, layer_m2 down, layer_m3 down, layer_m1 up, layer_m2 up, layer_m3 up, m1 up, m2 up, m3 up");
+    TYPE("overload down, m1 down, m2 down, m3 down, overload up, m1 up, m2 up, m3 up",
+        EXPECT, "layer_m1 down, layer_m2 down, layer_m3 down, layer_m1 up, layer_m2 up, layer_m3 up");
 }
 
 /*
@@ -274,8 +272,8 @@ static void testSpecialTyping()
 {
     printf("Special typing tests...\n");
 
-    // The key should be output, hyper mode not retained
-    TYPE("hyper down, leftshift tap, hyper up", EXPECT, "leftshift tap, hyper tap");
+    // The key should be output, overload mode not retained
+    TYPE("overload down, leftshift tap, overload up", EXPECT, "leftshift tap, overload tap");
 }
 
 /*
@@ -283,31 +281,32 @@ static void testSpecialTyping()
  */
 int main()
 {
-    test_device = registerInputDevice(0, "test", 1);
+    test_device = registerInputDevice(0, "test", 1, registerLayer(0, "test Device"));
 
     int remap[MAX_KEYMAP];
     memset(remap, 0, sizeof(remap));
 
-    memset(hyper_keymap, 0, sizeof(hyper_keymap));
+    struct layer* test_layer = registerLayer(0, "test Bindings");
 
     uint16_t sequence[4];
 
     // default config
-    hyperKey = KEY("hyper");
-    sequence[0] = KEY("layer_m1"); setLayerKey(KEY("m1"), 1, sequence);
-    sequence[0] = KEY("layer_m2"); setLayerKey(KEY("m2"), 1, sequence);
-    sequence[0] = KEY("layer_m3"); setLayerKey(KEY("m3"), 1, sequence);
+    sequence[0] = KEY("layer_m1"); setLayerKey(test_layer, KEY("m1"), 1, sequence);
+    sequence[0] = KEY("layer_m2"); setLayerKey(test_layer, KEY("m2"), 1, sequence);
+    sequence[0] = KEY("layer_m3"); setLayerKey(test_layer, KEY("m3"), 1, sequence);
 
-    sequence[0] = KEY("seq1"); sequence[1] = KEY("seq2"); setLayerKey(KEY("seq"), 2, sequence);
-    sequence[0] = KEY("seq1"); sequence[1] = KEY("seq2"); sequence[2] = KEY("seq3"); sequence[3] = KEY("seq4"); setLayerKey(KEY("lseq"), 4, sequence);
+    sequence[0] = KEY("seq1"); sequence[1] = KEY("seq2"); setLayerKey(test_layer, KEY("seq"), 2, sequence);
+    sequence[0] = KEY("seq1"); sequence[1] = KEY("seq2"); sequence[2] = KEY("seq3"); sequence[3] = KEY("seq4"); setLayerKey(test_layer, KEY("lseq"), 4, sequence);
 
     remap[KEY("or1")] = KEY("other");
     remap[KEY("mr2")] = KEY("m2");
-    sequence[0] = KEY("layer_mr2"); setLayerKey(KEY("mr2"), 1, sequence);
+    sequence[0] = KEY("layer_mr2"); setLayerKey(test_layer, KEY("mr2"), 1, sequence);
+
+    setLayerActionOverload(test_device->layer, KEY("overload"), test_layer, KEY("overload"));
 
     finalizeInputDevice(test_device, remap);
 
-    remapBindings(remap);
+    remapBindings(remap, test_layer);
 
     testNormalTyping();
     testFastTyping();

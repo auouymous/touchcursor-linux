@@ -1,138 +1,181 @@
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "config.h"
+#include "buffers.h"
 #include "emit.h"
 #include "keys.h"
 #include "mapper.h"
-#include "queue.h"
 
-static int hyperDown = 0;
-static int hyperActive = 0;
+#define PRESSED_TO_LAYER(device, code) layers[device->pressed[code] - 1]
+#define LAYER_TO_PRESSED(layer) (layer->index + 1)
+
+#define MAX_POOL_ACTIVATIONS 8
+static struct activation* activation_pool[MAX_POOL_ACTIVATIONS];
+static int nr_pool_activations = 0;
 
 /**
- * Lookup a key action for an input device.
- */
-static struct action find_key_action(struct input_device* device, int code)
+ * Activate layer.
+ * */
+static struct activation* activate_layer(struct input_device* device, struct layer* layer, enum activation_kind kind, int code)
 {
-    return hyper_keymap[code].kind != ACTION_TRANSPARENT ? hyper_keymap[code] : device->keymap[code];
+    struct activation* activation = (nr_pool_activations > 0 ? activation_pool[--nr_pool_activations] : malloc(sizeof(struct activation)));
+    memset(activation, 0, sizeof(struct activation));
+    activation->layer = layer;
+    activation->prev = device->top_activation;
+    // activation->next = NULL;
+    activation->code = code;
+    activation->kind = kind;
+    // activation->data.* = 0;
+
+    if (device->top_activation != NULL) device->top_activation->next = activation;
+    device->top_activation = activation;
+    return activation;
 }
 
 /**
- * Sends a hyper layer key sequence.
+ * Deactivate layer.
  * */
-static void send_layer_key(struct input_device* device, int code, int value)
+static void deactivate_layer(struct input_device* device, struct activation* activation)
 {
-    struct action action = find_key_action(device, code);
-    switch (action.kind)
+    if (activation->prev) activation->prev->next = activation->next;
+    if (activation->next) activation->next->prev = activation->prev;
+    if (device->top_activation == activation) device->top_activation = activation->prev;
+
+    if (nr_pool_activations < MAX_POOL_ACTIVATIONS)
     {
-        case ACTION_TRANSPARENT: break;
+        activation_pool[nr_pool_activations++] = activation;
+    }
+    else
+    {
+        free(activation);
+    }
+}
+
+/**
+ * Lookup a key layer for an input device.
+ */
+static struct layer* find_key_layer(struct input_device* device, int code, int value)
+{
+    if (IS_PRESS(value))
+    {
+        // Find code in active layers
+        struct activation* activation = device->top_activation;
+        while (activation != NULL)
+        {
+            if (activation->layer->keymap[code].kind != ACTION_TRANSPARENT)
+            {
+                return activation->layer;
+            }
+            activation = activation->prev;
+        }
+    }
+    else
+    {
+        // Find code in pressed array
+        if (device->pressed[code])
+        {
+            return PRESSED_TO_LAYER(device, code);
+        }
+        else
+        {
+            error("error: the service did not properly check if key was in pressed array before calling find_key_layer()\n");
+        }
+    }
+
+    return device->layer;
+}
+
+static void process_action(struct input_device* device, struct layer* layer, int code, int value);
+
+/**
+ * Activate an overload activation.
+ * */
+static void activate_overload(struct input_device* device, struct activation* activation, int delayed_code)
+{
+    activation->data.overload_layer.active = 1;
+    // Send press event for delayed key code
+    process_action(device, find_key_layer(device, delayed_code, 1), delayed_code, 1);
+}
+
+/**
+ * Find activation by key code.
+ * */
+struct activation* find_activation_by_code(struct input_device* device, int code)
+{
+    struct activation* activation = device->top_activation;
+    while (activation != NULL && activation->code != code) activation = activation->prev;
+    return activation;
+}
+
+#define FIND_ACTIVATION(device, expression) \
+    device->top_activation; \
+    while (activation != NULL && !(expression)) activation = activation->prev
+
+/**
+ * Process a key action.
+ * */
+static void process_action(struct input_device* device, struct layer* layer, int code, int value)
+{
+    struct action* action = &layer->keymap[code];
+
+    switch (action->kind)
+    {
+        case ACTION_TRANSPARENT:
+        {
+            error("error: the service did not properly pass-through a transparent key before calling process_action()\n");
+            break;
+        }
         case ACTION_KEY:
         {
-            emit(EV_KEY, action.data.key.code, value);
+            emit(EV_KEY, action->data.key.code, value);
             break;
         }
         case ACTION_KEYS:
         {
             for (int i = 0; i < MAX_SEQUENCE; i++)
             {
-                if (action.data.keys.codes[i] == 0)
+                if (action->data.keys.codes[i] == 0)
                 {
                     break;
                 }
-                emit(EV_KEY, action.data.keys.codes[i], value);
+                emit(EV_KEY, action->data.keys.codes[i], value);
+            }
+            break;
+        }
+        case ACTION_OVERLOAD_LAYER:
+        {
+            // Ignore repeat events
+            if (IS_PRESS(value))
+            {
+                activate_layer(device, layers[action->data.overload_layer.layer_index], ACTIVATION_OVERLOAD_LAYER, code);
+            }
+            else if (IS_RELEASE(value))
+            {
+                struct activation* activation = find_activation_by_code(device, code);
+                if (activation != NULL)
+                {
+                    if (!activation->data.overload_layer.active)
+                    {
+                        // Send overload-layer key and delayed key code, if one
+                        emit(EV_KEY, action->data.overload_layer.code, 1);
+                        if (activation->data.overload_layer.delayed_code)
+                        {
+                            emit(EV_KEY, activation->data.overload_layer.delayed_code, 1);
+                        }
+                        emit(EV_KEY, action->data.overload_layer.code, 0);
+                    }
+                    deactivate_layer(device, activation);
+                }
             }
             break;
         }
     }
 
-    if (IS_RELEASE(value))
-    {
-        removeKeyFromQueue(code);
-    }
-}
-
-/**
- * Sends all keys in the hyper queue.
- * */
-static void send_layer_queue(struct input_device* device, int value)
-{
-    int length = lengthOfQueue();
-    for (int i = 0; i < length; i++)
-    {
-        send_layer_key(device, dequeue(), value);
-    }
-}
-
-/**
- * Sends a default key.
- * */
-static void send_default_key(int code, int value)
-{
-    emit(EV_KEY, code, value);
-    if (IS_RELEASE(value))
-    {
-        removeKeyFromQueue(code);
-    }
-}
-
-/**
- * Sends all keys in the default queue.
- * */
-static void send_default_queue(int value)
-{
-    int length = lengthOfQueue();
-    for (int i = 0; i < length; i++)
-    {
-        send_default_key(dequeue(), value);
-    }
-}
-
-/**
- * Process a hyper key event.
- * */
-static void process_hyper(struct input_device* device, int code, int value)
-{
-    // Ignore repeat events
-    if (IS_PRESS(value))
-    {
-        hyperDown = 1;
-        hyperActive = 0;
-        clearQueue();
-    }
-    else if (IS_RELEASE(value))
-    {
-        hyperDown = 0;
-        if (hyperActive)
-        {
-            // Flush hyper layer queue
-            send_layer_queue(device, 0);
-            hyperActive = 0;
-        }
-        else
-        {
-            // Send hyper key and delayed key code, if one
-            send_default_key(hyperKey, 1);
-            send_default_queue(1);
-            send_default_key(hyperKey, 0);
-        }
-    }
-}
-
-/**
- * Process a key action.
- * */
-static void process_action(struct input_device* device, int code, int value)
-{
-    if (code == hyperKey)
-    {
-        process_hyper(device, code, value);
-    }
-    else
-    {
-        send_default_key(code, value);
-    }
+    device->pressed[code] = (IS_RELEASE(value) ? 0 : LAYER_TO_PRESSED(layer));
 }
 
 /**
@@ -142,62 +185,91 @@ void processKey(struct input_device* device, int type, int code, int value)
 {
     code = device->remap[code];
 
-    if (!hyperDown)
+    if (device->top_activation == NULL)
     {
-        process_action(device, code, value);
-    }
-    else if (code == hyperKey)
-    {
-        // Repeat or release hyper key
-        process_hyper(device, code, value);
-    }
-    else if (isModifier(code) && hyper_keymap[code].kind == ACTION_TRANSPARENT)
-    {
-        // Handle modifier here if not mapped, to avoid activating the hyper layer
-        send_default_key(code, value);
-    }
-    else
-    {
-        // The hyper key is down and event key is not the hyper key
-        if (IS_PRESS(value))
+        if (device->pressed[code])
         {
-            // Key press
-            if (!hyperActive)
-            {
-                if (lengthOfQueue() == 0)
-                {
-                    // Queue and delay first key press after pressing the hyper key
-                    enqueue(code);
-                    return;
-                }
-
-                // A second key press activates the hyper layer
-                hyperActive = 1;
-                // Send press event for delayed key code
-                send_layer_key(device, peek(), 1);
-            }
-
-            // Queue key press
-            enqueue(code);
+            // Key was pressed in device layer or a layer that has been deactivated
+            process_action(device, PRESSED_TO_LAYER(device, code), code, value);
         }
         else
         {
-            // Key repeat or release
-            if (!inQueue(code))
+            process_action(device, device->layer, code, value);
+        }
+    }
+    else if (code == device->top_activation->code)
+    {
+        // This path must not be entered on second press of the key that created activation
+        // Therefore, activation->code must always be cleared on release
+        if (device->pressed[code])
+        {
+            // Repeat or release the key used to activate current layer
+            process_action(device, PRESSED_TO_LAYER(device, code), code, value);
+        }
+        else
+        {
+            // Key was held down while starting the service, send its unprocessed code
+            emit(EV_KEY, code, value);
+        }
+    }
+    else if (isModifier(code) && (device->top_activation->layer->keymap[code].kind == ACTION_TRANSPARENT || (device->pressed[code] && PRESSED_TO_LAYER(device, code) != device->top_activation->layer)))
+    {
+        // Handle modifier here if not mapped, to avoid activating the layer
+        process_action(device, device->pressed[code] ? PRESSED_TO_LAYER(device, code) : find_key_layer(device, code, value), code, value);
+    }
+    else
+    {
+        struct activation* activation = device->top_activation;
+        switch (activation->kind)
+        {
+            case ACTIVATION_OVERLOAD_LAYER:
             {
-                // A key that was pressed before the hyper key was pressed
-                send_default_key(code, value);
-                return;
-            }
-            if (!hyperActive)
-            {
-                // Delayed key was repeated or released, activate the hyper layer
-                hyperActive = 1;
-                // Send press event for delayed key code
-                send_layer_key(device, peek(), 1);
+                // The overload-layer key is down and event key is not the overload-layer key
+                if (IS_PRESS(value))
+                {
+                    // Key press
+                    if (!activation->data.overload_layer.active)
+                    {
+                        int delayed_code = activation->data.overload_layer.delayed_code;
+                        if (delayed_code == 0)
+                        {
+                            // Delay first key press after pressing the overload-layer key
+                            activation->data.overload_layer.delayed_code = code;
+                            return;
+                        }
+
+                        // A second key press activates the overload layer
+                        activate_overload(device, activation, delayed_code);
+                    }
+                }
+                else
+                {
+                    // Key repeat or release
+                    int delayed_code = activation->data.overload_layer.delayed_code;
+                    if (code != delayed_code)
+                    {
+                        // A key that was pressed before the overload-layer key was pressed
+                        if (device->pressed[code])
+                        {
+                            process_action(device, PRESSED_TO_LAYER(device, code), code, value);
+                        }
+                        else
+                        {
+                            // Key was held down while starting the service, send its unprocessed code
+                            emit(EV_KEY, code, value);
+                        }
+                        return;
+                    }
+                    if (!activation->data.overload_layer.active)
+                    {
+                        // Delayed key was repeated or released, activate the overload layer
+                        activate_overload(device, activation, delayed_code);
+                    }
+                }
+
+                process_action(device, find_key_layer(device, code, value), code, value);
+                break;
             }
         }
-
-        send_layer_key(device, code, value);
     }
 }
