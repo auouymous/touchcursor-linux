@@ -26,6 +26,11 @@ void outputKeyList();
  * */
 int convertKeyStringToCode(char* keyString);
 
+/**
+ * Converts a key code to its corresponding string.
+ * */
+const char* convertKeyCodeToString(int keyCode);
+
 #define IS_PRESS(value) (value == 1)
 #define IS_REPEAT(value) (value == 2)
 #define IS_RELEASE(value) (value == 0)

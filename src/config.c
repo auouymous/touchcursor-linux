@@ -61,6 +61,24 @@ static void add_layer_path_reference(int lineno, struct layer* parent_layer, cha
 }
 
 /**
+ * Duplicate a layer path reference, if action has one.
+ * */
+static void duplicate_layer_path_reference(struct action *to_action, struct action *from_action)
+{
+    uint8_t* start = (uint8_t*)from_action;
+    uint8_t* end = (uint8_t*)from_action + sizeof(struct action);
+    for (struct layer_path_reference* p = layer_path_references; p != NULL; p = p->next)
+    {
+        if (p->field >= start && p->field < end)
+        {
+            // Field found inside from_action, duplicate it
+            add_layer_path_reference(p->lineno, p->parent_layer, p->path, (uint8_t*)to_action + (p->field - start));
+            return;
+        }
+    }
+}
+
+/**
  * Find layer by path name.
  * */
 static struct layer* find_layer(int lineno, struct layer* parent_layer, char* path)
@@ -796,6 +814,40 @@ static void parse_command(char* line, int lineno, struct layer* user_layer)
             {
                 error("error[%d]: leds command is not valid in a device layer\n", lineno);
                 return;
+            }
+            return;
+        }
+        if (strcmp(command, "copy-from-layer") == 0)
+        {
+            // (copy-from-layer layer)
+            char* layer_path = next_argument(&tokens);
+            if (tokens)
+            {
+                error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                return;
+            }
+
+            struct layer* layer = find_layer(lineno, user_layer, layer_path);
+            if (layer == NULL)
+            {
+                // Forward layer references are not allowed, the layer must exist to copy it now
+                error("error[%d]: layer not found: %s\n", lineno, layer_path);
+                return;
+            }
+
+            for (int k = 0; k < MAX_KEYMAP; k++)
+            {
+                if (layer->keymap[k].kind != ACTION_TRANSPARENT)
+                {
+                    if (user_layer->keymap[k].kind != ACTION_TRANSPARENT)
+                    {
+                        warn("warning[%d]: %s binding overwritten while copying from layer %s\n", lineno, convertKeyCodeToString(k), layer->name);
+                    }
+
+                    memcpy(&user_layer->keymap[k], &layer->keymap[k], sizeof(layer->keymap[k]));
+                    // Layer path references must be duplicated for the copied binds
+                    duplicate_layer_path_reference(&user_layer->keymap[k], &layer->keymap[k]);
+                }
             }
             return;
         }
