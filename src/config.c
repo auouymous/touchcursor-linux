@@ -440,15 +440,37 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
             }
             if (strcmp(action, "latch") == 0)
             {
+                // (latch)
+                // (latch modifier)
                 // (latch to_layer)
-                char* to_layer_path = next_argument(&tokens);
+                char* what = next_argument(&tokens);
                 if (tokens)
                 {
                     error("error[%d]: extra arguments found: %s\n", lineno, tokens);
                     return;
                 }
 
-                setLayerActionLatch(layer, fromCode, NULL, lineno, to_layer_path);
+                if (what[0] == '\0')
+                {
+                    if (!isModifier(fromCode))
+                    {
+                        error("error[%d]: can only bind to modifier keys, or layer name is missing\n", lineno);
+                        return;
+                    }
+
+                    setLayerActionLatchMod(layer, fromCode, lineno, fromCode);
+                    return;
+                }
+
+                int whatCode = convertKeyStringToCode(what);
+                if (isModifier(whatCode))
+                {
+                    setLayerActionLatchMod(layer, fromCode, lineno, whatCode);
+                }
+                else
+                {
+                    setLayerActionLatch(layer, fromCode, NULL, lineno, what);
+                }
                 return;
             }
             if (strcmp(action, "latch-menu") == 0)
@@ -465,15 +487,56 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
             }
             if (strcmp(action, "lock") == 0)
             {
+                // (lock)
+                // (lock modifier)
                 // (lock to_layer)
-                char* to_layer_path = next_argument(&tokens);
+                char* what = next_argument(&tokens);
                 if (tokens)
                 {
                     error("error[%d]: extra arguments found: %s\n", lineno, tokens);
                     return;
                 }
 
-                setLayerActionLock(layer, fromCode, NULL, lineno, to_layer_path, 0);
+                if (what[0] == '\0')
+                {
+                    if (!isModifier(fromCode))
+                    {
+                        error("error[%d]: can only bind to modifier keys, or layer name is missing\n", lineno);
+                        return;
+                    }
+
+                    setLayerActionLockMod(layer, fromCode, lineno, fromCode);
+                    return;
+                }
+
+                int whatCode = convertKeyStringToCode(what);
+                if (isModifier(whatCode))
+                {
+                    setLayerActionLockMod(layer, fromCode, lineno, whatCode);
+                }
+                else
+                {
+                    setLayerActionLock(layer, fromCode, NULL, lineno, what, 0);
+                }
+                return;
+            }
+            if (strcmp(action, "lock-if") == 0)
+            {
+                // (lock-if key)
+                char* key = next_argument(&tokens);
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                int code = key[0] != '\0' ? convertKeyStringToCode(key) : 0;
+                if (code == 0)
+                {
+                    error("error[%d]: invalid key: expected a single key: %s\n", lineno, key);
+                    return;
+                }
+                setLayerActionLockModIf(layer, fromCode, lineno, code);
                 return;
             }
             if (strcmp(action, "lock-overlay") == 0)
@@ -1777,6 +1840,27 @@ void setLayerActionLatchMenu(struct layer* layer, int key, int lineno)
 }
 
 /**
+ * Set latch-mod key in layer.
+ */
+void setLayerActionLatchMod(struct layer* layer, int key, int lineno, uint8_t code)
+{
+    if (!isModifier(code))
+    {
+        error("error[%d]: latch action can only be bound to modifier keys: %s\n", lineno, convertKeyCodeToString(code));
+        return;
+    }
+
+    if (transparent_layer == NULL)
+    {
+        transparent_layer = registerLayer(lineno, NULL, "Transparent");
+    }
+
+    layer->keymap[key].kind = ACTION_LATCH_MOD;
+    layer->keymap[key].data.latch_mod.modifier_bit = modifierKeyCodeToBit(code);
+    layer->keymap[key].data.latch_mod.modifier_code = code;
+}
+
+/**
  * Set lock-layer key in layer.
  */
 void setLayerActionLock(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint8_t is_overlay)
@@ -1791,6 +1875,46 @@ void setLayerActionLock(struct layer* layer, int key, struct layer* to_layer, in
     {
         add_layer_path_reference(lineno, layer, to_layer_path, &layer->keymap[key].data.lock_layer.layer_index);
     }
+}
+
+/**
+ * Set lock-mod key in layer.
+ */
+void setLayerActionLockMod(struct layer* layer, int key, int lineno, uint8_t code)
+{
+    if (!isModifier(code))
+    {
+        error("error[%d]: lock action can only be bound to modifier keys: %s\n", lineno, convertKeyCodeToString(code));
+        return;
+    }
+
+    if (transparent_layer == NULL)
+    {
+        transparent_layer = registerLayer(lineno, NULL, "Transparent");
+    }
+
+    layer->keymap[key].kind = ACTION_LOCK_MOD;
+    layer->keymap[key].data.lock_mod.modifier_bit = modifierKeyCodeToBit(code);
+    layer->keymap[key].data.lock_mod.modifier_code = code;
+}
+
+/**
+ * Set lock-if key in layer.
+ */
+void setLayerActionLockModIf(struct layer* layer, int key, int lineno, uint8_t if_code)
+{
+    if (!isModifier(key))
+    {
+        error("error[%d]: lock-if action can only be bound to modifier keys: %s\n", lineno, convertKeyCodeToString(key));
+        return;
+    }
+
+    layer->keymap[key].kind = ACTION_LOCK_MOD_IF;
+    layer->keymap[key].data.lock_mod_if.modifier_bit = modifierKeyCodeToBit(key);
+    layer->keymap[key].data.lock_mod_if.modifier_code = key;
+    // Non-modifier if_code keys can not be used to unlock the modifier in key parameter
+    layer->keymap[key].data.lock_mod_if.if_bit = modifierKeyCodeToBit(if_code);
+    layer->keymap[key].data.lock_mod_if.if_code = isModifier(if_code) ? if_code : 0;
 }
 
 /**
