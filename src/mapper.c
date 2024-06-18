@@ -109,6 +109,21 @@ static struct layer* find_key_layer(struct input_device* device, int code, int v
  * */
 static void emit_key_sequence(unsigned int max, uint16_t* sequence, int value)
 {
+    if (IS_RELEASE(value))
+    {
+        // Send release sequence in reverse order
+        int last = 0;
+        for (; last < max; last++)
+        {
+            if (sequence[last] == 0) break;
+        }
+        for (int i = last - 1; i >= 0; i--)
+        {
+            emit(EV_KEY, sequence[i], 0);
+        }
+        return;
+    }
+
     for (int i = 0; i < max; i++)
     {
         if (sequence[i] == 0)

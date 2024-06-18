@@ -233,10 +233,10 @@ static void testNormalTyping()
 
     TYPE("m1 down, overload tap, m2 tap, m1 up", EXPECT, "m1 down, overload tap, m2 tap, m1 up");
 
-    TYPE("overload down, seq tap, overload up", EXPECT, "seq1 down, seq2 down, seq1 up, seq2 up");
+    TYPE("overload down, seq tap, overload up", EXPECT, "seq1 down, seq2 down, seq2 up, seq1 up");
 
     TYPE("overload down, lseq tap, overload up",
-        EXPECT, "seq1 down, seq2 down, seq3 down, seq4 down, seq1 up, seq2 up, seq3 up, seq4 up");
+        EXPECT, "seq1 down, seq2 down, seq3 down, seq4 down, seq4 up, seq3 up, seq2 up, seq1 up");
 
     TYPE("or1 tap", EXPECT, "other tap");
 
