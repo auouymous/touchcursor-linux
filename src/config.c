@@ -15,6 +15,9 @@
 char configuration_file_path[256];
 int automatic_reload;
 
+struct input_device input_devices[MAX_DEVICES];
+int nr_input_devices;
+
 int hyperKey;
 struct key_output keymap[MAX_KEYMAP] = { 0 };
 int remap[MAX_KEYMAP] = { 0 };
@@ -102,6 +105,9 @@ int read_configuration()
     // Enable automatic reload
     automatic_reload = 1;
 
+    // Reset the input devices
+    nr_input_devices = 0;
+
     // Clear existing hyper key
     hyperKey = 0;
 
@@ -173,10 +179,13 @@ int read_configuration()
             {
                 char* name = line;
                 int number = get_device_number(name);
-                if (find_device_event_path(name, number) == EXIT_SUCCESS)
-                {
-                    section = configuration_none;
-                }
+                struct input_device* device = &input_devices[nr_input_devices];
+                strcpy(device->name, name);
+                device->number = number;
+                device->event_path[0] = '\0';
+                device->file_descriptor = -1;
+                find_device_event_path(device);
+                nr_input_devices++;
                 break;
             }
             case configuration_remap:

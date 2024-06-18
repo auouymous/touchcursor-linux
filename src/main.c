@@ -173,7 +173,7 @@ static int release_configuration_file_watch()
 static void clean_up()
 {
     release_configuration_file_watch();
-    release_input();
+    release_inputs();
     release_output();
 }
 
@@ -229,9 +229,10 @@ int main(int argc, char* argv[])
         error("error: failed to watch the configuration file\n");
         return EXIT_FAILURE;
     }
-    if (bind_input() != EXIT_SUCCESS)
+    int bound_inputs = bind_inputs();
+    if (bound_inputs == 0)
     {
-        error("error: could not capture the input device\n");
+        error("error: could not capture any keyboard devices\n");
     }
     if (bind_output() != EXIT_SUCCESS)
     {
@@ -240,24 +241,23 @@ int main(int argc, char* argv[])
     }
     log("info: running\n");
     // Read events
-    struct input_event event;
-    ssize_t result;
     while (1)
     {
         if (should_reload)
         {
             log("info: reloading\n");
             release_output_keys();
-            release_input();
+            release_inputs();
             if (read_configuration() != EXIT_SUCCESS)
             {
                 error("error: failed to read the configuration\n");
                 clean_up();
                 return EXIT_FAILURE;
             }
-            if (bind_input() != EXIT_SUCCESS)
+            bound_inputs = bind_inputs();
+            if (bound_inputs == 0)
             {
-                error("error: could not capture the keyboard device\n");
+                error("error: could not capture any keyboard devices\n");
             }
             should_reload = 0;
         }
@@ -267,48 +267,12 @@ int main(int argc, char* argv[])
             clean_up();
             return EXIT_SUCCESS;
         }
-        if (input_event_path[0] == '\0')
+        if (bound_inputs == 0)
         {
             log("info: you may update the configuration file to have the application attempt discovering the input device again.\n");
             sleep(UINT_MAX); // this can be interrupted
             continue;
         }
-        result = read(input_file_descriptor, &event, sizeof(event));
-        if (result == (ssize_t)-1)
-        {
-            if (errno == EINTR)
-            {
-                continue;
-            }
-            else
-            {
-                error("error: unable to read input event: %s\n", strerror(errno));
-                log("info: exiting\n");
-                clean_up();
-                return EXIT_FAILURE;
-            }
-        }
-        if (result == (ssize_t)0)
-        {
-            error("error: received EOF while reading input events\n");
-            log("info: exiting\n");
-            clean_up();
-            return EXIT_FAILURE;
-        }
-        if (result != sizeof(event))
-        {
-            warn("warning: partial input event received\n");
-            continue;
-        }
-        // We only want to manipulate key presses
-        if (event.type == EV_KEY
-            && (event.value == 0 || event.value == 1 || event.value == 2))
-        {
-            processKey(event.type, event.code, event.value);
-        }
-        else
-        {
-            emit(event.type, event.code, event.value);
-        }
+        read_inputs();
     }
 }

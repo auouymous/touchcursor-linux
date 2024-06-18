@@ -1,6 +1,8 @@
 #ifndef binding_h
 #define binding_h
 
+#include "config.h"
+
 /**
  * @brief The upper limit for enabling key events.
  *
@@ -14,35 +16,26 @@
 #define MAX_KEYBIT 572
 
 /**
- * The name of the input device.
- * */
-extern char input_device_name[256];
-/**
- * The event path for the input device.
- * */
-extern char input_event_path[256];
-/**
- * The file descriptor for the input device.
- * */
-extern int input_file_descriptor;
-
-/**
  * Searches /proc/bus/input/devices for the device event.
  *
- * @param name The device name.
- * @param number The device instance number.
+ * @param device The device entry.
  */
-int find_device_event_path(char* name, int number);
+void find_device_event_path(struct input_device* device);
 
 /**
- * Binds to the input device using ioctl.
+ * Binds to the input devices using ioctl.
  * */
-int bind_input();
+int bind_inputs();
 
 /**
- * Releases the input device.
+ * Releases the input devices.
  * */
-int release_input();
+void release_inputs();
+
+/**
+ * Read the input devices.
+ * */
+void read_inputs();
 
 /**
  * The name of the output device.
