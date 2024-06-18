@@ -536,6 +536,22 @@ static void process_action(struct input_device* device, struct layer* layer, int
             }
             break;
         }
+        case ACTION_UKEYS_STR:
+        {
+            if (value != 0)
+            {
+                int length = 3 * action->data.ukeys_str.length;
+                uint8_t* codepoints = codepoint_strings[action->data.ukeys_str.codepoint_string_index];
+                uint8_t modifiers = release_all_output_modifiers();
+                for (int i = 0; i < length; i += 3)
+                {
+                    if (!emit_codepoint(&codepoints[i])) break;
+                    usleep(ukeys_delay);
+                }
+                restore_all_output_modifiers(modifiers);
+            }
+            break;
+        }
         case ACTION_OVERLOAD_MOD:
         {
             if (IS_PRESS(value))
