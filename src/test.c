@@ -58,6 +58,7 @@ static struct test_keys test_keys[] = {
 
     {KEY_D, "disabled"},
     {KEY_SPACE, "overload"},
+    {KEY_COMMA, "shift"},
 
     {0, NULL}
 };
@@ -246,6 +247,12 @@ static void testNormalTyping()
 
     // Nothing should be output
     TYPE("overload down, disabled tap, overload up", EXPECT, "");
+
+    TYPE("shift tap, other tap", EXPECT, "other tap");
+
+    TYPE("shift down, m1 tap, shift up", EXPECT, "layer_m1 tap");
+
+    TYPE("shift down, m1 tap, m1 tap, shift up", EXPECT, "layer_m1 tap, layer_m1 tap");
 }
 
 /*
@@ -269,6 +276,8 @@ static void testFastTyping()
     // The mapped keys should be sent converted
     TYPE("overload down, m1 down, m2 down, m3 down, overload up, m1 up, m2 up, m3 up",
         EXPECT, "layer_m1 down, layer_m2 down, layer_m3 down, layer_m1 up, layer_m2 up, layer_m3 up");
+
+    TYPE("shift down, m1 down, shift up, m1 up", EXPECT, "layer_m1 tap");
 }
 
 /*
@@ -312,6 +321,7 @@ int main()
 
     setLayerActionDisabled(test_layer, KEY("disabled"));
     setLayerActionOverload(test_device->layer, KEY("overload"), test_layer, 0, NULL, KEY("overload"));
+    setLayerActionShift(test_device->layer, KEY("shift"), test_layer, 0, NULL);
 
     finalizeInputDevice(test_device, remap);
 

@@ -312,6 +312,19 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
                 setLayerActionOverload(layer, fromCode, NULL, lineno, to_layer_path, to_code);
                 return;
             }
+            if (strcmp(action, "shift") == 0)
+            {
+                // (shift to_layer)
+                char* to_layer_path = next_argument(&tokens);
+                if (tokens)
+                {
+                    error("error[%d]: extra arguments found: %s\n", lineno, tokens);
+                    return;
+                }
+
+                setLayerActionShift(layer, fromCode, NULL, lineno, to_layer_path);
+                return;
+            }
         }
 
         error("error[%d]: invalid action: %s\n", lineno, action);
@@ -861,6 +874,22 @@ void setLayerActionOverload(struct layer* layer, int key, struct layer* to_layer
         add_layer_path_reference(lineno, layer, to_layer_path, &layer->keymap[key].data.overload_layer.layer_index);
     }
     layer->keymap[key].data.overload_layer.code = to_code;
+}
+
+/**
+ * Set shift-layer key in layer.
+ */
+void setLayerActionShift(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path)
+{
+    layer->keymap[key].kind = ACTION_SHIFT_LAYER;
+    if (to_layer)
+    {
+        layer->keymap[key].data.shift_layer.layer_index = to_layer->index;
+    }
+    else
+    {
+        add_layer_path_reference(lineno, layer, to_layer_path, &layer->keymap[key].data.shift_layer.layer_index);
+    }
 }
 
 /**

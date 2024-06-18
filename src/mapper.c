@@ -174,6 +174,23 @@ static void process_action(struct input_device* device, struct layer* layer, int
             }
             break;
         }
+        case ACTION_SHIFT_LAYER:
+        {
+            // Ignore repeat events
+            if (IS_PRESS(value))
+            {
+                activate_layer(device, layers[action->data.shift_layer.layer_index], ACTIVATION_SHIFT_LAYER, code);
+            }
+            else if (IS_RELEASE(value))
+            {
+                struct activation* activation = find_activation_by_code(device, code);
+                if (activation != NULL)
+                {
+                    deactivate_layer(device, activation);
+                }
+            }
+            break;
+        }
     }
 
     device->pressed[code] = (IS_RELEASE(value) ? 0 : LAYER_TO_PRESSED(layer));
@@ -268,6 +285,11 @@ void processKey(struct input_device* device, int type, int code, int value)
                     }
                 }
 
+                process_action(device, find_key_layer(device, code, value), code, value);
+                break;
+            }
+            case ACTIVATION_SHIFT_LAYER:
+            {
                 process_action(device, find_key_layer(device, code, value), code, value);
                 break;
             }

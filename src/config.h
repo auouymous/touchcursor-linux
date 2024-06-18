@@ -31,6 +31,7 @@ enum action_kind
     ACTION_KEY,             // emit a single key code
     ACTION_KEYS,            // emit multiple key codes
     ACTION_OVERLOAD_LAYER,  // activate layer on hold, or emit a single key code on tap
+    ACTION_SHIFT_LAYER,     // activate layer on hold
 };
 struct action
 {
@@ -46,6 +47,9 @@ struct action
             uint8_t layer_index;
             uint16_t code;
         } overload_layer;
+        struct {
+            uint8_t layer_index;
+        } shift_layer;
     } data;
 };
 
@@ -68,6 +72,7 @@ extern struct layer* layers[MAX_LAYERS];
 enum activation_kind
 {
     ACTIVATION_OVERLOAD_LAYER,
+    ACTIVATION_SHIFT_LAYER,
 };
 struct activation
 {
@@ -141,6 +146,11 @@ void setLayerKey(struct layer* layer, int key, unsigned int length, uint16_t* se
  * Set overload-layer key in layer.
  */
 void setLayerActionOverload(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path, uint16_t to_code);
+
+/**
+ * Set shift-layer key in layer.
+ */
+void setLayerActionShift(struct layer* layer, int key, struct layer* to_layer, int lineno, char* to_layer_path);
 
 /**
  * Register a layer.
