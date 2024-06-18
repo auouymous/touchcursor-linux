@@ -21,6 +21,10 @@ enum input_method ukey_input_method;
 uint16_t ukey_compose_key;
 int ukeys_delay;
 
+uint8_t** codepoint_strings;
+int nr_codepoint_strings = 0;
+int max_codepoint_strings;
+
 struct layer* layers[MAX_LAYERS];
 static int nr_layers = 0;
 struct layer* transparent_layer;
@@ -520,13 +524,13 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
         if (length && tokens[length - 1] == quote)
         {
             tokens[length - 1] = '\0'; // Remove end quote
-            uint8_t sequence[MAX_SEQUENCE_UKEY];
+            uint8_t sequence[MAX_SEQUENCE_UKEY_STR];
             unsigned int index = 0;
             for (char* p = tokens; *p != '\0';)
             {
-                if (index >= MAX_SEQUENCE_UKEY)
+                if (index >= MAX_SEQUENCE_UKEY_STR)
                 {
-                    error("error[%d]: exceeded limit of %d UTF-8 characters in string: \"%s\"\n", lineno, MAX_SEQUENCE_UKEY / 3, tokens);
+                    error("error[%d]: exceeded limit of %d UTF-8 characters in string: \"%s\"\n", lineno, MAX_SEQUENCE_UKEY_STR / 3, tokens);
                     return;
                 }
                 int codepoint = 0;
@@ -631,9 +635,10 @@ static void parse_binding(char* line, int lineno, struct layer* layer)
             }
             if (index == 0)
             {
-                error("error[%d]: expected a string of 1-%d UTF-8 characters\n", lineno, MAX_SEQUENCE_UKEY / 3);
+                error("error[%d]: expected a string of 1-%d UTF-8 characters\n", lineno, MAX_SEQUENCE_UKEY_STR / 3);
                 return;
             }
+
             setLayerUKey(layer, fromCode, index / 3, sequence);
             return;
         }
@@ -810,6 +815,16 @@ int read_configuration()
     ukey_input_method = input_method_none;
     ukey_compose_key = KEY_CANCEL;
     ukeys_delay = 5;
+
+    // Free existing codepoint strings
+    if (nr_codepoint_strings)
+    {
+        for (int i = 0; i < nr_codepoint_strings; i++) free(codepoint_strings[i]);
+        free(codepoint_strings);
+    }
+    codepoint_strings = NULL;
+    nr_codepoint_strings = 0;
+    max_codepoint_strings = 0;
 
     // Reset the input devices
     nr_input_devices = 0;
@@ -1387,14 +1402,35 @@ void setLayerUKey(struct layer* layer, int key, unsigned int length, uint8_t* se
         }
         default:
         {
-            layer->keymap[key].kind = ACTION_UKEYS;
+            uint8_t* codepoints;
+            if (3 * length > MAX_SEQUENCE_UKEY)
+            {
+                if (nr_codepoint_strings == max_codepoint_strings)
+                {
+                    // Create or resize the array
+                    max_codepoint_strings += 64;
+                    codepoint_strings = realloc(codepoint_strings, max_codepoint_strings * sizeof(void*));
+                }
+
+                layer->keymap[key].kind = ACTION_UKEYS_STR;
+                layer->keymap[key].data.ukeys_str.codepoint_string_index = nr_codepoint_strings;
+                layer->keymap[key].data.ukeys_str.length = length;
+                codepoints = malloc(3 * length);
+                codepoint_strings[nr_codepoint_strings++] = codepoints;
+            }
+            else
+            {
+                layer->keymap[key].kind = ACTION_UKEYS;
+                codepoints = layer->keymap[key].data.ukeys.codepoints;
+            }
+
             for (int i = 0; i < 3 * length; i++)
             {
-                layer->keymap[key].data.ukeys.codepoints[i] = sequence[i];
+                codepoints[i] = sequence[i];
             }
             for (int i = 3 * length; i < MAX_SEQUENCE_UKEY; i++)
             {
-                layer->keymap[key].data.ukeys.codepoints[i] = 0;
+                codepoints[i] = 0;
             }
             break;
         }

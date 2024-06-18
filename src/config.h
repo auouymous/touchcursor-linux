@@ -16,6 +16,7 @@
 #define MAX_LAYER_LEDS 8
 #define MAX_SEQUENCE 5
 #define MAX_SEQUENCE_UKEY 3 * 3
+#define MAX_SEQUENCE_UKEY_STR 3 * 256
 #define MAX_SEQUENCE_OVERLOAD_MOD (MAX_SEQUENCE - 3)
 
 /**
@@ -51,6 +52,11 @@ extern uint16_t ukey_compose_key;
 extern int ukeys_delay;
 
 /**
+ * Array of codepoint strings for ACTION_UKEYS_STR actions.
+ * */
+extern uint8_t** codepoint_strings;
+
+/**
  * Key action.
  * */
 enum action_kind
@@ -61,6 +67,7 @@ enum action_kind
     ACTION_KEYS,            // emit multiple key codes
     ACTION_UKEY,            // emit a single unicode key sequence
     ACTION_UKEYS,           // emit multiple unicode key sequences
+    ACTION_UKEYS_STR,       // emit long string of unicode key sequences
     ACTION_OVERLOAD_MOD,    // press keys on hold, or emit a single key code on tap
     ACTION_OVERLOAD_LAYER,  // activate layer on hold, or emit a single key code on tap
     ACTION_SHIFT_LAYER,     // activate layer on hold
@@ -85,6 +92,10 @@ struct action
         struct {
             uint8_t codepoints[MAX_SEQUENCE_UKEY];
         } ukeys;
+        struct {
+            uint16_t codepoint_string_index;
+            uint16_t length;
+        } ukeys_str;
         struct {
             uint16_t codes[MAX_SEQUENCE_OVERLOAD_MOD];
             uint16_t code;
